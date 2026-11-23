@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Trade Assistant status</title>
+<style>
+body{font:14px system-ui,sans-serif;width:410px;padding:16px;margin:0;color:#202124}
+h1{font-size:18px;margin:0 0 12px}
+p{line-height:1.5}
+button{padding:8px 12px;cursor:pointer}
+#details{white-space:pre-wrap;font-size:12px}
+fieldset{margin-top:18px;border:1px solid #ccc;border-radius:8px;padding:12px}
+label{display:block;margin:10px 0 4px}
+input,select{box-sizing:border-box;width:100%;padding:7px}
+#mass-offer{height:125px}
+small{display:block;color:#555;line-height:1.5}
+.actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
+#ad-status,#finder-status{white-space:pre-wrap;font-size:12px}
+button:disabled{cursor:wait}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#finder-results{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;margin-top:8px}
+.finder-card{border:1px solid #d0d7de;border-radius:7px;padding:9px;background:#f8fafc;font-size:12px;line-height:1.45}
+.finder-card-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.finder-badge{background:#0969da;color:#fff;font-weight:600;padding:1px 7px;border-radius:999px;font-size:11px}
+.finder-age{margin-left:auto;color:#57606a;font-size:11px}
+.finder-highlight{color:#0a53be;font-weight:600;margin-bottom:3px}
+.finder-side{color:#333}
+.finder-links{display:flex;gap:12px;margin-top:6px}
+.finder-links a{color:#0969da;text-decoration:none;font-weight:500}
+.finder-links a:hover{text-decoration:underline}
+</style></head>
+<body><h1>Trade Assistant <span id="version"></span></h1>
+<p id="api">Checking Rolimon's API…</p><p id="page">Checking Roblox trade page…</p>
+<button id="grant" hidden>Allow value and trade API access</button>
+<button id="retry">Check again</button><p><a href="https://api.rolimons.com/items/v2/itemdetails" target="_blank" rel="noopener">Open API connection test</a></p><p id="details"></p>
+<fieldset><legend>Rolimon’s auto trade ads</legend>
+<p>Choose your items on Rolimon’s, then click <strong>Auto post this ad</strong> in the panel at the bottom right.</p>
+<p><a href="https://www.rolimons.com/tradeadcreate" target="_blank" rel="noopener">Open Rolimon’s ad creator →</a></p>
+<p id="ad-status" role="status" aria-live="polite">Checking schedule…</p>
+<button id="ad-stop" type="button">Stop auto posting</button>
+</fieldset>
+<fieldset><legend>Low-trader demand ad finder</legend>
+<p>Scrape recent Rolimon’s trade ads to spot low-trade-count players offering Amazing/High demand items (like 8BRC or SSHF) in your value range.</p>
+<div class="grid-2">
+  <div>
+    <label for="finder-min-value">Min item value</label>
+    <input id="finder-min-value" type="number" min="0" step="1000" value="10000" placeholder="0">
+  </div>
+  <div>
+    <label for="finder-max-value">Max item value</label>
+    <input id="finder-max-value" type="number" min="0" step="1000" value="150000" placeholder="No max">
+  </div>
+</div>
+<div class="grid-2">
+  <div>
+    <label for="finder-max-ads">Max trade ads posted</label>
+    <input id="finder-max-ads" type="number" min="0" step="10" value="150" placeholder="150">
+  </div>
+  <div>
+    <label for="finder-demand">Minimum demand</label>
+    <select id="finder-demand">
+      <option value="4" selected>Amazing only (e.g. 8BRC)</option>
+      <option value="3">High &amp; Amazing (includes SSHF)</option>
+      <option value="2">Normal+</option>
+    </select>
+  </div>
+</div>
+<label for="finder-items">Specific items (optional — blank finds all matching demand)</label>
+<input id="finder-items" type="text" placeholder="e.g. SSHF, 8BRC, 10159600649" autocomplete="off">
+<div class="actions">
+  <button id="finder-scan" type="button">Scan trade ads</button>
+  <button id="finder-auto" type="button">Auto-scan (1m)</button>
+  <button id="finder-clear" type="button">Clear</button>
+</div>
+<p id="finder-status" role="status" aria-live="polite">Loading finder…</p>
+<div id="finder-results" aria-live="polite"></div>
+<small>Shows each poster’s exact Rolimon’s Trade Ads Created count, sorted lowest first. Projected items are excluded.</small>
+</fieldset>
+<fieldset><legend>Mass send exact trades</legend>
+<p>Choose your copies and the exact items you want. Finds recent ads offering your request for your offer (maximum 20 people).</p>
+<button id="mass-load" type="button">Load my inventory &amp; items</button>
+<p id="mass-account"></p>
+<label for="mass-offer">Your offer — select up to 4 owned copies</label>
+<small>Hold Command/Ctrl to select multiple copies. Serial and copy IDs identify exactly which copies you give.</small>
+<select id="mass-offer" multiple aria-label="Owned copies to offer"></select>
+<label for="mass-wanted-1">You receive — search by name or catalog ID</label>
+<small>One item per slot; repeat an ID to request multiple copies. Leave unused slots blank.</small>
+<input id="mass-wanted-1" list="mass-items" placeholder="Requested item 1" autocomplete="off">
+<input id="mass-wanted-2" list="mass-items" placeholder="Requested item 2 (optional)" aria-label="Requested item 2" autocomplete="off">
+<input id="mass-wanted-3" list="mass-items" placeholder="Requested item 3 (optional)" aria-label="Requested item 3" autocomplete="off">
+<input id="mass-wanted-4" list="mass-items" placeholder="Requested item 4 (optional)" aria-label="Requested item 4" autocomplete="off">
+<datalist id="mass-items"></datalist>
+<div class="actions"><button id="mass-preview" type="button" disabled>Find &amp; preview matches</button><button id="mass-stop" type="button">Stop batch</button></div>
+<div id="mass-review" style="white-space:pre-wrap;font-size:12px;margin:12px 0"></div>
+<label><input id="mass-confirm" type="checkbox" style="width:auto"> I reviewed the exact items, quantities, and recipients above.</label>
+<button id="mass-start" type="button" disabled>Send reviewed batch</button>
+<p id="mass-status" role="status" aria-live="polite"></p>
+<small>Zero Robux on both sides. No item substitutions. Lower estimated receiving value blocks sending; values may use RAP and do not predict future prices. Sends once per minute, stops on errors or verification. Stop cannot retract submitted trades; manage those in Roblox Outbound.</small>
+</fieldset>
+<script src="popup.js"></script><script src="ad-finder-ui.js"></script><script src="mass-trades-ui.js"></script></body></html>

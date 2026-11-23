@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Roblox Trade Assistant",
+  "version": "0.4.0",
+  "description": "Display trade values, schedule trade ads, and send reviewed exact-match trade batches.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.rolimons.com/*",
+    "https://trades.roblox.com/*",
+    "https://users.roblox.com/*",
+    "https://inventory.roblox.com/*",
+    "https://www.rolimons.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.roblox.com/*",
+        "https://web.roblox.com/*"
+      ],
+      "js": [
+        "src/values.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.rolimons.com/*"
+      ],
+      "js": [
+        "src/rolimons-ads-ui.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Trade Assistant status",
+    "default_popup": "src/popup.html"
+  }
+}
