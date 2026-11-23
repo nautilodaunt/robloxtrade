@@ -93,6 +93,18 @@ const TradeAds = (() => {
   async function post(prefetchedSite) {
     const state = await read();
     if (!state.enabled) return state;
+    let config;
+    try {
+      // Local storage can be written by other extension contexts, so rebuild the
+      // request from the saved selections with the same checks used at start.
+      config = validate(state.config);
+    } catch {
+      state.enabled = false;
+      state.nextAt = 0;
+      state.waitingForCooldown = false;
+      state.status = 'Paused: Saved ad data is invalid. Start again from Rolimon’s ad creator.';
+      await write(state); await schedule(state); return state;
+    }
     const waitingCooldown = isWaitingForCooldown(state);
     if (!waitingCooldown && state.nextAt && Date.now() < state.nextAt) {
       await schedule(state);
@@ -132,7 +144,7 @@ const TradeAds = (() => {
     try {
       const response = await fetch(CREATE_AD_URL, {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state.config.payload), signal: AbortSignal.timeout(15000)
+        body: JSON.stringify(config.payload), signal: AbortSignal.timeout(15000)
       });
       const result = await response.json().catch(() => ({}));
       if (Number(result.code) === 7105 || response.status === 429) {
@@ -182,7 +194,7 @@ const TradeAds = (() => {
       const postedAt = Date.now();
       const refreshed = await fetchSiteCooldown();
       const websiteCooldownAt = refreshed?.nextAt || (postedAt + (site?.cooldownMs || DEFAULT_COOLDOWN_MS) + 1000);
-      const intervalNextAt = state.config.minutes > 15 ? postedAt + state.config.minutes * 60000 : 0;
+      const intervalNextAt = config.minutes > 15 ? postedAt + config.minutes * 60000 : 0;
       state.lastPostedAt = postedAt;
       state.nextAt = Math.max(websiteCooldownAt, intervalNextAt);
       state.waitingForCooldown = intervalNextAt <= websiteCooldownAt;
@@ -232,7 +244,9 @@ const TradeAds = (() => {
       state.enabled = true;
       state.nextAt = 0;
       state.waitingForCooldown = true;
-      state.fallbackSiteNextAt = message.siteNextAt > Date.now() ? message.siteNextAt : 0;
+      // Page-supplied: keep it only if it is a real time within the next day.
+      const siteNextAt = Number(message.siteNextAt);
+      state.fallbackSiteNextAt = Number.isFinite(siteNextAt) && siteNextAt > Date.now() && siteNextAt <= Date.now() + 86400000 ? siteNextAt : 0;
       state.status = 'Checking Rolimon’s cooldown…';
       await write(state);
       return post();
@@ -293,7 +307,9 @@ const TradeAds = (() => {
           if (!site || !/^https:\/\/www\.rolimons\.com\/tradeadcreate(?:[?#]|$)/.test(sender.url)) throw new Error('Open the Rolimon’s ad creator first.');
           const [snapshot] = await chrome.scripting.executeScript({ target: { tabId: sender.tab.id }, world: 'MAIN', func: readCreator });
           if (snapshot?.error || !snapshot?.result) throw new Error(snapshot?.error?.message || 'Could not read your ad. Refresh Rolimon’s and try again.');
-          return command({ type: 'START_ADS', config: { ...snapshot.result, minutes: message.minutes }, siteNextAt: snapshot.result.siteNextAt });
+          // The page controls these values; pass on only the known fields for validation.
+          const { playerId, offers, requests, tags, offerRobux, siteNextAt } = snapshot.result;
+          return command({ type: 'START_ADS', config: { playerId, offers, requests, tags, offerRobux, minutes: message.minutes }, siteNextAt });
         });
         respond({ ok: true, state });
       } catch (error) {

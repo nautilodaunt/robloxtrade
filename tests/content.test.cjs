@@ -245,3 +245,91 @@ test('v2 bundle trades render once in nested list rows and include received Robu
     assert.match(boxes[0].textContent, /Give 42,000\nReceive 47,246/);
   } finally { dom.window.close(); }
 });
+
+test('list totals never give a look-alike asset the value of a limited with the same name', async () => {
+  const dom = new JSDOM(`<meta name="user-data" data-userid="10"><div data-trade-id="123" class="trade-row">Partner</div>`,
+    { url: 'https://www.roblox.com/trades', runScripts: 'outside-only' });
+  const current = { ...data, items: { 1: { name: 'Playful Vampire', value: 42000 }, 2: { name: 'Other', value: 4700 } } };
+  dom.window.chrome = { runtime: { onMessage: { addListener() {} }, sendMessage: async m => {
+    if (m.type === 'GET_ROLIMONS_VALUES') return current;
+    if (m.status) return { ok: true, result: { data: [] } };
+    return { ok: true, result: {
+      participantAOffer: { user: { id: 10 }, robux: 0, items: [{ itemName: 'Other', itemTarget: { itemType: 'Asset', targetId: '2' } }] },
+      participantBOffer: { user: { id: 20 }, robux: 0, items: [{ itemName: 'Playful Vampire', itemTarget: { itemType: 'Asset', targetId: '555' }, recentAveragePrice: 5 }] }
+    } };
+  } } };
+  dom.window.eval(values); dom.window.eval(content);
+  try {
+    await pause(); await pause();
+    const box = dom.window.document.querySelector('.rta-trade-summary');
+    assert.equal(box.dataset.result, 'loss');
+    assert.match(box.textContent, /Give 4,700\nReceive 5\n/);
+  } finally { dom.window.close(); }
+});
+
+test('a gain that depends on a projected RAP is shown as a caution', async () => {
+  const current = { ...data, items: { 1: { name: 'Valued', value: 1000, rap: 900 }, 3: { name: 'Projected', value: null, rap: 9000, projected: true } } };
+  const dom = await page(`<div class="trade-offer">${card(1)}<div class="robux-line">Robux: 0</div></div>
+    <div class="trade-request">${card(3)}<div class="robux-line">Robux: 0</div></div>`, current);
+  try {
+    const doc = dom.window.document;
+    const box = doc.querySelector('.rta-trade-summary');
+    assert.equal(box.dataset.result, 'caution');
+    assert.match(box.textContent, /⚠ Verify: 1 projected item at RAP/);
+    assert.match(doc.querySelector('.trade-request .rta-item-value').textContent, /9,000 \(projected RAP\)/);
+    assert.match(doc.querySelector('.trade-request .rta-value-row').textContent, /1 RAP fallback, 1 projected/);
+  } finally { dom.window.close(); }
+});
+
+test('a gain from a bundle matched only by name is shown as a caution', async () => {
+  const current = { ...data, items: { 1: { name: 'Valued', value: 1000 }, 2409285794: { name: 'Playful Vampire', value: 42000 } } };
+  const dom = await page(`<div class="trade-offer">${card(1)}<div class="robux-line">Robux: 0</div></div>
+    <div class="trade-request"><div class="item-card"><a href="/bundles/105919952545574/Playful-Vampire">Playful Vampire</a></div><div class="robux-line">Robux: 0</div></div>`, current);
+  try {
+    const doc = dom.window.document;
+    const box = doc.querySelector('.rta-trade-summary');
+    assert.equal(box.dataset.result, 'caution');
+    assert.match(box.textContent, /⚠ Verify: 1 bundle matched by name/);
+    assert.match(box.title, /check those items/);
+    assert.match(doc.querySelector('.trade-request .rta-item-value').title, /matched to this item by name/);
+  } finally { dom.window.close(); }
+});
+
+test('page-controlled trade IDs must be numeric before any API request', async () => {
+  const dom = new JSDOM(`<meta name="user-data" data-userid="10"><div data-trade-id="1/../../v1/users" class="trade-row">Partner</div>`,
+    { url: 'https://www.roblox.com/trades', runScripts: 'outside-only' });
+  const requests = [];
+  dom.window.chrome = { runtime: { onMessage: { addListener() {} }, sendMessage: async m => {
+    if (m.type === 'GET_ROLIMONS_VALUES') return data;
+    requests.push(m);
+    return { ok: true, result: { data: [] } };
+  } } };
+  dom.window.eval(values); dom.window.eval(content);
+  try {
+    await pause();
+    assert(requests.length > 0);
+    assert(requests.every(m => !('tradeId' in m)));
+  } finally { dom.window.close(); }
+});
+
+test('a list gain that relies on Roblox RAP for an item Rolimon’s does not list is shown as a caution', async () => {
+  const dom = new JSDOM(`<meta name="user-data" data-userid="10"><div data-trade-id="123" class="trade-row">Partner</div>`,
+    { url: 'https://www.roblox.com/trades', runScripts: 'outside-only' });
+  const current = { ...data, items: { 2: { name: 'Other', value: 4700 } } };
+  dom.window.chrome = { runtime: { onMessage: { addListener() {} }, sendMessage: async m => {
+    if (m.type === 'GET_ROLIMONS_VALUES') return current;
+    if (m.status) return { ok: true, result: { data: [] } };
+    return { ok: true, result: {
+      participantAOffer: { user: { id: 10 }, robux: 0, items: [{ itemName: 'Other', itemTarget: { itemType: 'Asset', targetId: '2' } }] },
+      participantBOffer: { user: { id: 20 }, robux: 0, items: [{ itemName: 'Pumped UGC', itemTarget: { itemType: 'Asset', targetId: '777' }, recentAveragePrice: 90000 }] }
+    } };
+  } } };
+  dom.window.eval(values); dom.window.eval(content);
+  try {
+    await pause(); await pause();
+    const box = dom.window.document.querySelector('.rta-trade-summary');
+    assert.equal(box.dataset.result, 'caution');
+    assert.match(box.textContent, /Give 4,700\nReceive 90,000\n.*\n⚠ Verify items/);
+    assert.match(box.title, /1 item not on Rolimon’s \(Roblox RAP\)/);
+  } finally { dom.window.close(); }
+});

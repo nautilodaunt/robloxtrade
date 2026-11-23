@@ -23,8 +23,9 @@ test('ad finder popup UI sends customizable filters, renders trade counts safely
     requestTotal: 0,
     requestTags: ['Downgrade'],
     requestRobux: 0,
-    tradeUrl: 'https://www.roblox.com/users/99/trade',
-    rolimonsUrl: 'https://www.rolimons.com/player/99'
+    // Stored URLs are ignored; links are rebuilt from the numeric userId.
+    tradeUrl: 'javascript:alert(1)',
+    rolimonsUrl: 'https://evil.example/'
   };
 
   dom.window.chrome = {
@@ -83,6 +84,7 @@ test('ad finder popup UI sends customizable filters, renders trade counts safely
   assert.match(el('results').textContent, /8BRC/);
   assert.equal(el('results').querySelector('img, script'), null);
   assert.equal(el('results').querySelector('a').href, 'https://www.roblox.com/users/99/trade');
+  assert.equal(el('results').querySelectorAll('a')[1].href, 'https://www.rolimons.com/player/99');
 
   el('auto').click();
   await settle();

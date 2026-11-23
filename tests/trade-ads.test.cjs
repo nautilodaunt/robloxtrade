@@ -281,3 +281,38 @@ test('parseSiteCooldown distinguishes signed-out pages from signed-in zero coold
   const active = TradeAds.parseSiteCooldown(buildCreatorHtml({ seconds: 90, dailyUsed: 5, dailyLimit: 60, cooldownMinutes: 15 }), 1000);
   assert.equal(active.nextAt, 92000);
 });
+
+test('worker rebuilds the stored ad request and pauses on invalid saved settings', async () => {
+  const app = setup();
+  await app.command('SAVE_AD', config);
+  // Another extension context rewrites the stored payload.
+  const tampered = { ...app.state, enabled: true, config: { ...app.state.config, payload: { player_id: 1, offer_item_ids: [5], request_tags: ['evil'] } } };
+  const restarted = setup(tampered);
+  restarted.startup(); await settle();
+  assert.equal(restarted.calls.length, 1);
+  assert.deepEqual(JSON.parse(restarted.calls[0].body), { player_id: 123, offer_item_ids: [1029025, 1365767], request_item_ids: [], request_tags: ['upgrade'] });
+
+  const broken = setup({ ...tampered, config: { ...tampered.config, offers: '1; 2' } });
+  broken.startup(); await settle();
+  assert.equal(broken.calls.length, 0);
+  assert.equal(broken.state.enabled, false);
+  assert.match(broken.state.status, /invalid/i);
+  assert.equal(broken.alarm, undefined);
+});
+
+test('a page-supplied cooldown is used only if it ends within a day', async () => {
+  const creator = completeAt => ({
+    jwt_player_id: 456, trade_object: { offer_robux: 0 },
+    generate_trade_ad_data_from_trade_object() {}, is_trade_ad_valid: () => true,
+    trade_ad_offer_item_ids: [101], trade_ad_request_item_ids: [], trade_ad_request_tags: ['any'],
+    cooldown_active: true, cooldown_complete_time: completeAt
+  });
+  // The live website check fails, so only the page's value is available.
+  const near = setup(undefined, { success: true }, creator(200060000), {}, { unavailable: true });
+  assert.equal((await near.pageCommand('START_ADS_FROM_PAGE')).ok, true);
+  assert.equal(near.calls.length, 0);
+  assert.equal(near.alarm.when, 200060000);
+  const far = setup(undefined, { success: true }, creator(200000000 + 10 * 86400000), {}, { unavailable: true });
+  assert.equal((await far.pageCommand('START_ADS_FROM_PAGE')).ok, true);
+  assert.equal(far.calls.length, 1);
+});

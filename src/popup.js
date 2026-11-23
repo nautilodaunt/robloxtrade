@@ -6,7 +6,7 @@ async function check(force = false) {
   api.textContent = "Checking Rolimon's API…";
   page.textContent = 'Checking Roblox trade page…';
   details.textContent = '';
-  const granted = await chrome.permissions.contains({ origins: ['https://api.rolimons.com/*', 'https://trades.roblox.com/*'] });
+  const granted = await chrome.permissions.contains({ origins: ['https://api.rolimons.com/*', 'https://trades.roblox.com/*', 'https://users.roblox.com/*'] });
   document.getElementById('grant').hidden = granted;
   await Promise.all([
     (async () => {
@@ -37,7 +37,7 @@ check();
 
 document.getElementById('grant').addEventListener('click', async () => {
   try {
-    await chrome.permissions.request({ origins: ['https://api.rolimons.com/*', 'https://trades.roblox.com/*'] });
+    await chrome.permissions.request({ origins: ['https://api.rolimons.com/*', 'https://trades.roblox.com/*', 'https://users.roblox.com/*'] });
     await check();
   } catch (error) { details.textContent = error.message; }
 });

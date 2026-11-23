@@ -58,6 +58,7 @@
 }
 .rta-trade-summary[data-result="gain"] { border-color: #22a65a; background: rgba(34, 166, 90, .12); }
 .rta-trade-summary[data-result="loss"] { border-color: #da4453; background: rgba(218, 68, 83, .12); }
+.rta-trade-summary[data-result="caution"] { border-color: #e0a100; background: rgba(224, 161, 0, .14); }
 .rta-robux-total { display: block; font-size: 13px; font-weight: 500; }
 .rta-list-host { position: relative !important; padding-right: 165px !important; min-height: 108px; }
 .rta-list-summary {

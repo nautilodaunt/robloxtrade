@@ -23,37 +23,51 @@
         rap: valid(row[2]) ? row[2] : null,
         value: valid(row[3]) ? row[3] : null,
         demand,
-        projected: row[7] === 1
+        projected: row[7] === 1,
+        rare: row[9] === 1
       };
     }
     if (!Object.keys(items).length) throw new Error("Rolimon's returned no items");
     return items;
   }
 
-  function resolveBundle(link, items) {
-    // Migrated faces now link to bundles. Only resolve an exact, unique name
-    // match from the bundle's Roblox URL slug; never confuse bundle IDs with assets.
-    const normalize = name => name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    let slug;
-    try { slug = decodeURIComponent(new URL(link, "https://www.roblox.com").pathname.split("/")[3] || ""); }
-    catch { return null; }
-    const name = normalize(slug);
-    if (!name) return null;
-    const matches = Object.keys(items).filter(id => normalize(items[id].name || "") === name);
+  const normalize = name => String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Exact, unique name match. Use it only for bundles: migrated faces keep their
+  // old asset entry on Rolimon's, so the name is the only link between them.
+  // Callers must flag the result, because a look-alike item can copy a name.
+  function matchName(name, items) {
+    const target = normalize(name);
+    if (!target) return null;
+    const matches = Object.keys(items).filter(id => normalize(items[id]?.name) === target);
     return matches.length === 1 ? matches[0] : null;
   }
 
-  function totalItems(ids, items) {
-    let total = 0, rapFallbacks = 0, missing = 0;
-    for (const id of ids) {
-      const item = items[id];
-      if (item?.value != null) total += item.value;
-      else if (item?.rap != null) { total += item.rap; rapFallbacks++; }
-      else missing++;
-    }
-    return { total, rapFallbacks, missing };
+  function resolveBundle(link, items) {
+    // Migrated faces now link to bundles. Only resolve an exact, unique name
+    // match from the bundle's Roblox URL slug; never confuse bundle IDs with assets.
+    let slug;
+    try { slug = decodeURIComponent(new URL(link, "https://www.roblox.com").pathname.split("/")[3] || ""); }
+    catch { return null; }
+    return matchName(slug, items);
   }
 
-  root.TradeValues = { parseItems, totalItems, resolveBundle, DEMAND_LABELS };
+  function totalItems(ids, items) {
+    let total = 0, rapFallbacks = 0, missing = 0, projected = 0;
+    for (const id of ids) {
+      // Own keys only: "__proto__" or "constructor" must never resolve to a price.
+      const item = Object.hasOwn(items, id) ? items[id] : undefined;
+      if (item?.value != null) total += item.value;
+      else if (item?.rap != null) {
+        total += item.rap; rapFallbacks++;
+        // Rolimon's marks projected RAP as inflated; callers should warn about it.
+        if (item.projected === true) projected++;
+      }
+      else missing++;
+    }
+    return { total, rapFallbacks, missing, projected };
+  }
+
+  root.TradeValues = { parseItems, totalItems, resolveBundle, matchName, DEMAND_LABELS };
   if (typeof module !== "undefined") module.exports = root.TradeValues;
 })(globalThis);

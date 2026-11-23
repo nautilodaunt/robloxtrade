@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Roblox Trade Assistant",
-  "version": "0.4.0",
-  "description": "Display trade values, schedule trade ads, and send reviewed exact-match trade batches.",
+  "version": "0.5.1",
+  "minimum_chrome_version": "110",
+  "incognito": "not_allowed",
+  "description": "Display trade values, schedule trade ads, and mass send reviewed trades to matching Rolimon's ads.",
   "permissions": [
     "storage",
     "alarms",
@@ -12,7 +14,6 @@
     "https://api.rolimons.com/*",
     "https://trades.roblox.com/*",
     "https://users.roblox.com/*",
-    "https://inventory.roblox.com/*",
     "https://www.rolimons.com/*"
   ],
   "background": {

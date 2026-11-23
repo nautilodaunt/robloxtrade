@@ -264,9 +264,7 @@ const AdFinder = (() => {
         requestItems,
         requestTotal: TradeValues.totalItems(receiving?.items || [], catalog).total,
         requestTags,
-        requestRobux,
-        tradeUrl: `https://www.roblox.com/users/${userId}/trade`,
-        rolimonsUrl: `${PLAYER_URL}/${userId}`
+        requestRobux
       });
     }
     return [...byUser.values()];

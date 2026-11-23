@@ -2,7 +2,8 @@
   if (window.top !== window || document.getElementById('rta-auto-ads')) return;
   const host = document.createElement('div');
   host.id = 'rta-auto-ads';
-  const root = host.attachShadow({ mode: 'open' });
+  // Closed, so page scripts can't reach in and click Start or Stop.
+  const root = host.attachShadow({ mode: 'closed' });
   const creator = location.pathname === '/tradeadcreate';
   root.innerHTML = `
     <style>

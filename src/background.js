@@ -45,7 +45,9 @@ async function getValues(force = false) {
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id) return;
   if (message?.type === 'GET_TRADE_DATA') {
-    if (!/^https:\/\/(www|web)\.roblox\.com\//.test(sender.tab?.url || '')) return;
+    // Check the sending frame's own URL, not the tab's: content scripts run only
+    // in Roblox top frames, and another site's frame can sit inside a Roblox tab.
+    if (!sender.tab || sender.frameId !== 0 || !/^https:\/\/(www|web)\.roblox\.com\//.test(sender.url || '')) return;
     const id = String(message.tradeId || '');
     const status = message.status;
     if (!/^\d+$/.test(id) && !['Inbound', 'Outbound', 'Completed', 'Inactive'].includes(status)) return;

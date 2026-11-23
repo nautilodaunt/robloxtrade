@@ -22,33 +22,39 @@
   let nextFetch = 0;
   let timer;
 
-  function assetId(link) {
+  function assetInfo(link) {
     try {
       const url = new URL(link.getAttribute("href"), location.href);
       if (!/(^|\.)roblox\.com$/.test(url.hostname)) return null;
       if (url.pathname.startsWith('/bundles/')) {
-        return TradeValues.resolveBundle(url.href, data?.items || {}) || `bundle:${url.pathname.split('/')[2]}`;
+        // Migrated faces link to bundles that Rolimon's lists under the old asset,
+        // so only the name connects them. Flag it: a look-alike can copy a name.
+        const id = TradeValues.resolveBundle(url.href, data?.items || {});
+        return id ? { id, nameMatched: true } : { id: `bundle:${url.pathname.split('/')[2]}`, nameMatched: false };
       }
-      return url.pathname.match(/^\/(?:catalog|library)\/(\d+)(?:\/|$)/)?.[1] ?? null;
+      const id = url.pathname.match(/^\/(?:catalog|library)\/(\d+)(?:\/|$)/)?.[1];
+      return id ? { id, nameMatched: false } : null;
     } catch { return null; }
   }
 
-  function itemIds(links) {
+  function itemInfos(links) {
     const cardsSeen = new Set();
-    const ids = [];
+    const infos = [];
     for (const link of links) {
-      const id = assetId(link);
-      if (!id) continue;
+      const info = assetInfo(link);
+      if (!info) continue;
       // Image and title links in one card count once. Separate copies of an
       // identical limited in different cards must each contribute to the total.
       const card = link.closest(CARD);
-      const key = card || id;
+      const key = card || info.id;
       if (cardsSeen.has(key)) continue;
       cardsSeen.add(key);
-      ids.push(id);
+      infos.push(info);
     }
-    return ids;
+    return infos;
   }
+  // Own keys only, so names like "__proto__" never resolve to an item.
+  const lookup = (items, id) => (items && Object.hasOwn(items, id) ? items[id] : undefined);
 
   function robuxRows() {
     const candidates = [...document.querySelectorAll(
@@ -127,15 +133,35 @@
     return { state: delta > 0 ? 'gain' : delta < 0 ? 'loss' : 'even',
       text: `${delta > 0 ? '+' : delta < 0 ? '−' : ''}${number(Math.abs(delta))} Robux${percent} · ${delta > 0 ? 'Gain' : delta < 0 ? 'Loss' : 'Even'}` };
   }
-  function paintSummary(host, give, receive, extra = '') {
+  // Notes for values that need a second look, from both sides of a trade.
+  function flagNotes(sides) {
+    const projected = sides.reduce((sum, side) => sum + side.projected, 0);
+    const nameMatched = sides.reduce((sum, side) => sum + side.nameMatched, 0);
+    return `${projected ? ` · ${projected} projected` : ''}${nameMatched ? ` · ${nameMatched} name-matched` : ''}`;
+  }
+  // Only the received side can make a bad trade look good.
+  function cautionFor(side) {
+    const parts = [];
+    if (side.projected) parts.push(`${side.projected} projected item${side.projected === 1 ? '' : 's'} at RAP`);
+    if (side.nameMatched) parts.push(`${side.nameMatched} bundle${side.nameMatched === 1 ? '' : 's'} matched by name`);
+    if (side.robloxRap) parts.push(`${side.robloxRap} item${side.robloxRap === 1 ? '' : 's'} not on Rolimon’s (Roblox RAP)`);
+    return parts.join(', ');
+  }
+  function paintSummary(host, give, receive, extra = '', caution = '') {
     let box = summaries.get(host);
     if (!box) { box = document.createElement('div'); box.className = 'rta-trade-summary'; summaries.set(host, box); }
     const result = comparison(give, receive);
-    box.dataset.result = result.state;
+    // A projected RAP or a bundle matched only by name can make a bad trade look
+    // profitable, so such a gain is shown as a caution instead of green.
+    const warn = Boolean(caution) && result.state === 'gain';
+    box.dataset.result = warn ? 'caution' : result.state;
     const isList = tradeListRows().includes(host);
-    const text = isList ? `Give ${number(give)}\nReceive ${number(receive)}\n${result.text.split(' · ')[0]}` : `Give ${number(give)} · Receive ${number(receive)}\n${result.text}${extra}`;
+    const text = isList
+      ? `Give ${number(give)}\nReceive ${number(receive)}\n${result.text.split(' · ')[0]}${warn ? '\n⚠ Verify items' : ''}`
+      : `Give ${number(give)} · Receive ${number(receive)}\n${result.text}${extra}${warn ? `\n⚠ Verify: ${caution}` : ''}`;
     if (box.textContent !== text) box.textContent = text;
-    box.title = 'Estimated using current Rolimon’s values plus Robux. List receipts account for the 30% Robux fee; detail receipts use Roblox’s displayed amount. Not historical profit.';
+    box.title = 'Estimated using current Rolimon’s values plus Robux. List receipts account for the 30% Robux fee; detail receipts use Roblox’s displayed amount. Not historical profit.' +
+      (caution ? ` What you receive includes ${caution}; check those items before accepting.` : '');
     if (isList) {
       host.classList.add('rta-list-host');
       box.classList.add('rta-list-summary');
@@ -181,10 +207,14 @@
     })) };
   }
   async function getTradeData(query) {
+    // IDs can come from page attributes; only digits may become part of the API path.
+    const tradeId = query.tradeId == null ? '' : String(query.tradeId);
+    if (tradeId && !/^\d+$/.test(tradeId)) return { ok: false, error: 'Invalid trade ID' };
+    if (!tradeId && !['Inbound', 'Outbound', 'Completed', 'Inactive'].includes(query.status)) return { ok: false, error: 'Invalid trade category' };
     // Use Roblox's existing page origin and signed-in session. Chrome may withhold
     // a newly added extension host permission until the user grants it.
     if (typeof fetch === 'function') {
-      const path = query.tradeId ? `v2/trades/${query.tradeId}` : `v1/trades/${query.status}?limit=100&sortOrder=Desc`;
+      const path = tradeId ? `v2/trades/${tradeId}` : `v1/trades/${query.status}?limit=100&sortOrder=Desc`;
       try {
         const response = await fetch(`https://trades.roblox.com/${path}`, {
           credentials: 'include', signal: AbortSignal.timeout(15000)
@@ -214,7 +244,9 @@
       for (const row of rows) {
         // Roblox can reuse the same row when switching trade categories.
         summaries.get(row)?.remove();
-        let id = row.getAttribute('data-trade-id') || row.querySelector('a[href*="tradeId="]')?.href.match(/tradeId=(\d+)/)?.[1];
+        // The page controls these attributes; accept only a numeric trade ID.
+        let id = [row.getAttribute('data-trade-id'), row.querySelector('a[href*="tradeId="]')?.href.match(/tradeId=(\d+)/)?.[1]]
+          .find(value => /^\d+$/.test(value || ''));
         const partner = row.querySelector('a[href*="/users/"]')?.getAttribute('href')?.match(/\/users\/(\d+)/)?.[1];
         const username = row.querySelector('.trade-partner-name, .text-name, .trade-name')?.textContent.trim();
         if (!id) {
@@ -242,24 +274,35 @@
         if (!own || !other) continue;
         const totals = [own, other].map(o => {
           const items = { ...data.items };
+          const unvetted = new Set();
+          let nameMatched = 0;
           const ids = o.userAssets.map(a => {
             const id = String(a.assetId);
-            if (items[id]?.value != null || items[id]?.rap != null) return id;
-            const normalize = name => (name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const matches = Object.keys(data.items).filter(key => normalize(data.items[key].name) === normalize(a.name) && normalize(a.name));
-            if (matches.length === 1) return matches[0];
-            // Roblox supplies RAP even for assets missing from the value feed.
-            if (Number.isFinite(a.recentAveragePrice) && a.recentAveragePrice >= 0)
+            const known = lookup(items, id);
+            if (known?.value != null || known?.rap != null) return id;
+            // Assets need an exact ID: a look-alike can copy a limited's name. Only
+            // bundles (migrated faces) fall back to the name, and they are flagged.
+            if (id.startsWith('bundle:')) {
+              const match = TradeValues.matchName(a.name, data.items);
+              if (match) { nameMatched++; return match; }
+            }
+            // Roblox supplies RAP even for assets missing from the value feed. Nobody
+            // vets that RAP (it can be pumped), so it is flagged like a projected item.
+            if (/^(?:bundle:)?\d+$/.test(id) && Number.isFinite(a.recentAveragePrice) && a.recentAveragePrice >= 0) {
               items[id] = { rap: a.recentAveragePrice, value: null };
+              unvetted.add(id);
+            }
             return id;
           });
           const result = TradeValues.totalItems(ids, items);
-          return { ...result, total: result.total + (o === own ? o.robux : Math.round(o.robux * 0.7)) };
+          return { ...result, nameMatched, robloxRap: ids.filter(id => unvetted.has(id)).length,
+            total: result.total + (o === own ? o.robux : Math.round(o.robux * 0.7)) };
         });
         if (totals.some(t => t.missing || !Number.isFinite(t.total))) {
           summaries.get(row)?.remove(); continue;
         }
-        paintSummary(row, totals[0].total, totals[1].total, `${totals.some(t => t.rapFallbacks) ? ' · RAP fallback' : ''}${data.stale ? ' · cached' : ''}`);
+        paintSummary(row, totals[0].total, totals[1].total,
+          `${totals.some(t => t.rapFallbacks) ? ' · RAP fallback' : ''}${flagNotes(totals)}${data.stale ? ' · cached' : ''}`, cautionFor(totals[1]));
       }
     } finally {
       listLoading = false;
@@ -275,13 +318,13 @@
     for (const { links } of sides) {
       const cards = new Map();
       for (const link of links) {
-        const id = assetId(link);
-        if (!id) continue;
+        const info = assetInfo(link);
+        if (!info) continue;
         const card = link.closest(CARD) || link;
         // A card can have separate thumbnail and title links.
-        if (!cards.has(card)) cards.set(card, id);
+        if (!cards.has(card)) cards.set(card, info);
       }
-      for (const [card, id] of cards) {
+      for (const [card, { id, nameMatched }] of cards) {
         active.add(card);
         let row = itemRows.get(card);
         if (!row) {
@@ -291,13 +334,17 @@
         }
         const host = card.querySelector('.item-card-caption, .item-card-info') || card;
         if (row.parentElement !== host) host.append(row);
-        const item = data?.items?.[id];
+        const item = lookup(data?.items, id);
         const value = item?.value ?? item?.rap;
         let text = 'Loading…';
         let title = "Rolimon's item value";
         if (data?.ok) {
           text = value == null ? 'Unavailable' : value.toLocaleString('en-US');
-          if (item?.value == null && item?.rap != null) { text += ' (RAP)'; title += ' — RAP fallback; no assigned value'; }
+          if (item?.value == null && item?.rap != null) {
+            text += item.projected === true ? ' (projected RAP)' : ' (RAP)';
+            title += item.projected === true ? ' — RAP fallback; Rolimon’s marks this RAP as projected (likely inflated)' : ' — RAP fallback; no assigned value';
+          }
+          if (nameMatched && value != null) title += ' — bundle matched to this item by name only; check it is the original';
           if (value == null) title += ` — no data for ${id}`;
           if (data.stale) { text += ' · cached'; title += ' — latest fetch failed'; }
         } else if (data) { text = 'Unavailable'; title += ` — ${data.error || 'API data unavailable'}`; }
@@ -316,7 +363,8 @@
     detailSummary?.remove();
     if (!data?.ok || sides.length !== 2) return;
     const totals = sides.map(({ links, anchor, robux: detectedRobux }) => {
-      const result = TradeValues.totalItems(itemIds(links), data.items);
+      const infos = itemInfos(links);
+      const result = TradeValues.totalItems(infos.map(info => info.id), data.items);
       const isRobux = /Robux/i.test(anchor.textContent);
       const raw = isRobux ? (anchor.querySelector('input')?.value || anchor.textContent.replace(/Robux(?:\s*\([^)]*\))?\s*:?/i, '').trim()) : '0';
       const robux = detectedRobux ?? (/^[\d,]+$/.test(raw) ? Number(raw.replaceAll(',', '')) : null);
@@ -325,11 +373,11 @@
       el.className = 'rta-robux-total';
       el.textContent = `Robux: ${number(robux)} · Items + Robux: ${number(result.total + robux)}`;
       rendered.get(sides.find(side => side.anchor === anchor).key)?.insertAdjacentElement('afterend', el);
-      return result.total + robux;
+      return { total: result.total + robux, projected: result.projected, nameMatched: infos.filter(info => info.nameMatched).length };
     });
     if (totals.some(t => t == null)) return;
     const host = rendered.get(sides[1].key)?.parentElement;
-    if (host) detailSummary = paintSummary(host, totals[0], totals[1], data.stale ? ' · cached' : '');
+    if (host) detailSummary = paintSummary(host, totals[0].total, totals[1].total, `${flagNotes(totals)}${data.stale ? ' · cached' : ''}`, cautionFor(totals[1]));
   }
   function render() {
     renderTradeList().catch(() => {});
@@ -351,11 +399,18 @@
       let text = "Rolimon's value: Loading…";
       let title = 'Item values only; Robux is displayed separately by Roblox.';
       if (data?.ok) {
-        const { total, rapFallbacks, missing } = TradeValues.totalItems(itemIds(links), data.items);
-        const ids = itemIds(links);
-        const missingIds = ids.filter(id => !data.items[id] || (data.items[id].value == null && data.items[id].rap == null));
+        const infos = itemInfos(links);
+        const ids = infos.map(info => info.id);
+        const { total, rapFallbacks, missing, projected } = TradeValues.totalItems(ids, data.items);
+        const nameMatched = infos.filter(info => info.nameMatched).length;
+        const missingIds = ids.filter(id => { const item = lookup(data.items, id); return item?.value == null && item?.rap == null; });
         text = `Rolimon's value: ${missing ? `Unavailable — no data for ${missingIds.join(', ')}` : total.toLocaleString('en-US')}`;
-        if (rapFallbacks) text += ` (${rapFallbacks} RAP fallback${rapFallbacks === 1 ? '' : 's'})`;
+        const notes = [];
+        if (rapFallbacks) notes.push(`${rapFallbacks} RAP fallback${rapFallbacks === 1 ? '' : 's'}`);
+        if (projected) notes.push(`${projected} projected`);
+        if (notes.length) text += ` (${notes.join(', ')})`;
+        if (projected) title += ` ${projected} item(s) use a RAP that Rolimon’s marks as projected (likely inflated).`;
+        if (nameMatched) title += ` ${nameMatched} bundle(s) matched to an item by name only; check they are the originals.`;
         if (missing) title += ` ${missing} item(s) have no available data; no complete total can be shown.`;
         if (data.stale) text += ' · cached';
         title += ` Updated ${new Date(data.fetchedAt).toLocaleString()}.`;

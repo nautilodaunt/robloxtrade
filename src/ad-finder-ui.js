@@ -86,19 +86,22 @@
     const links = document.createElement('div');
     links.className = 'finder-links';
 
-    const tradeLink = document.createElement('a');
-    tradeLink.href = match.tradeUrl;
-    tradeLink.target = '_blank';
-    tradeLink.rel = 'noopener';
-    tradeLink.textContent = 'Send Roblox trade ↗';
+    // Build links from the numeric user ID; never trust URLs read from storage.
+    const userId = /^[1-9]\d*$/.test(String(match.userId)) ? String(match.userId) : '';
+    if (userId) {
+      const tradeLink = document.createElement('a');
+      tradeLink.href = `https://www.roblox.com/users/${userId}/trade`;
+      tradeLink.target = '_blank';
+      tradeLink.rel = 'noopener';
+      tradeLink.textContent = 'Send Roblox trade ↗';
 
-    const profileLink = document.createElement('a');
-    profileLink.href = match.rolimonsUrl;
-    profileLink.target = '_blank';
-    profileLink.rel = 'noopener';
-    profileLink.textContent = 'Rolimon’s profile ↗';
-
-    links.append(tradeLink, profileLink);
+      const profileLink = document.createElement('a');
+      profileLink.href = `https://www.rolimons.com/player/${userId}`;
+      profileLink.target = '_blank';
+      profileLink.rel = 'noopener';
+      profileLink.textContent = 'Rolimon’s profile ↗';
+      links.append(tradeLink, profileLink);
+    }
     card.append(top, highlight, offerLine, requestLine, links);
     return card;
   }

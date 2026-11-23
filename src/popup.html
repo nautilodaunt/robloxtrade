@@ -11,6 +11,10 @@ fieldset{margin-top:18px;border:1px solid #ccc;border-radius:8px;padding:12px}
 label{display:block;margin:10px 0 4px}
 input,select{box-sizing:border-box;width:100%;padding:7px}
 #mass-offer{height:125px}
+.tags{display:flex;flex-wrap:wrap;gap:0 12px;margin-top:6px}
+.tags label{display:inline-flex;align-items:center;gap:4px;margin:2px 0}
+.tags input{width:auto}
+#mass-status{white-space:pre-wrap;font-size:12px;font-weight:600}
 small{display:block;color:#555;line-height:1.5}
 .actions{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
 #ad-status,#finder-status{white-space:pre-wrap;font-size:12px}
@@ -74,25 +78,42 @@ button:disabled{cursor:wait}
 <div id="finder-results" aria-live="polite"></div>
 <small>Shows each poster’s exact Rolimon’s Trade Ads Created count, sorted lowest first. Projected items are excluded.</small>
 </fieldset>
-<fieldset><legend>Mass send exact trades</legend>
-<p>Choose your copies and the exact items you want. Finds recent ads offering your request for your offer (maximum 20 people).</p>
-<button id="mass-load" type="button">Load my inventory &amp; items</button>
+<fieldset><legend>Mass send trades</legend>
+<p>Sends your offer to people whose recent Rolimon’s ads give what you want for it, and keeps watching for new ads. At most one trade per minute.</p>
+<button id="mass-load" type="button">Load my inventory &amp; values</button>
+<p id="mass-status" role="status" aria-live="polite"></p>
 <p id="mass-account"></p>
-<label for="mass-offer">Your offer — select up to 4 owned copies</label>
-<small>Hold Command/Ctrl to select multiple copies. Serial and copy IDs identify exactly which copies you give.</small>
-<select id="mass-offer" multiple aria-label="Owned copies to offer"></select>
-<label for="mass-wanted-1">You receive — search by name or catalog ID</label>
-<small>One item per slot; repeat an ID to request multiple copies. Leave unused slots blank.</small>
+<label for="mass-offer">You give (up to 4)</label>
+<small>Hold Ctrl (Windows) or ⌘ Command (Mac) to pick several. Sorted by value.</small>
+<select id="mass-offer" multiple aria-label="Your items to offer"></select>
+<label for="mass-wanted-1">You get: search by name, acronym or ID</label>
+<small>One item per box; repeat an item to ask for two copies. Leave unused boxes blank.</small>
 <input id="mass-wanted-1" list="mass-items" placeholder="Requested item 1" autocomplete="off">
 <input id="mass-wanted-2" list="mass-items" placeholder="Requested item 2 (optional)" aria-label="Requested item 2" autocomplete="off">
 <input id="mass-wanted-3" list="mass-items" placeholder="Requested item 3 (optional)" aria-label="Requested item 3" autocomplete="off">
 <input id="mass-wanted-4" list="mass-items" placeholder="Requested item 4 (optional)" aria-label="Requested item 4" autocomplete="off">
 <datalist id="mass-items"></datalist>
-<div class="actions"><button id="mass-preview" type="button" disabled>Find &amp; preview matches</button><button id="mass-stop" type="button">Stop batch</button></div>
+<label for="mass-mode">Which ads count as a match?</label>
+<select id="mass-mode">
+  <option value="flexible" selected>Exact ads + ads whose request tags your offer fits</option>
+  <option value="exact">Only ads asking for exactly your items</option>
+</select>
+<div id="mass-tags" class="tags" role="group" aria-label="Request tags to accept">
+  <label><input type="checkbox" value="any" checked> Any</label><label><input type="checkbox" value="upgrade" checked> Upgrade</label>
+  <label><input type="checkbox" value="downgrade" checked> Downgrade</label><label><input type="checkbox" value="adds" checked> Adds</label>
+  <label><input type="checkbox" value="demand" checked> Demand</label><label><input type="checkbox" value="rares" checked> Rares</label>
+  <label><input type="checkbox" value="rap" checked> RAP</label><label><input type="checkbox" value="projecteds" checked> Projecteds</label>
+</div>
+<small>A tag only counts when your offer really fits it (e.g. Upgrade = they get fewer items, Demand = all your items are High/Amazing demand). Robux and Wishlist requests are never matched.</small>
+<div class="grid-2">
+  <div><label for="mass-minutes">Keep watching new ads</label>
+    <select id="mass-minutes"><option value="0">No, current ads only</option><option value="15">15 minutes</option><option value="30" selected>30 minutes</option><option value="60">1 hour</option><option value="120">2 hours</option></select></div>
+  <div><label for="mass-max">Max trades</label><input id="mass-max" type="number" min="1" max="50" step="1" value="20"></div>
+</div>
+<div class="actions"><button id="mass-preview" type="button" disabled>Find matches</button><button id="mass-stop" type="button">Stop</button></div>
 <div id="mass-review" style="white-space:pre-wrap;font-size:12px;margin:12px 0"></div>
-<label><input id="mass-confirm" type="checkbox" style="width:auto"> I reviewed the exact items, quantities, and recipients above.</label>
-<button id="mass-start" type="button" disabled>Send reviewed batch</button>
-<p id="mass-status" role="status" aria-live="polite"></p>
-<small>Zero Robux on both sides. No item substitutions. Lower estimated receiving value blocks sending; values may use RAP and do not predict future prices. Sends once per minute, stops on errors or verification. Stop cannot retract submitted trades; manage those in Roblox Outbound.</small>
+<label><input id="mass-confirm" type="checkbox" style="width:auto"> I checked the items, rules and recipients above.</label>
+<button id="mass-start" type="button" disabled>Start sending</button>
+<small>Zero Robux on both sides; only your selected copies. Blocks sending if what you get is worth less than what you give (Rolimon’s value, RAP if unvalued) or is projected. People who can’t trade or no longer have the items are skipped. Pauses on rate limits, verification or uncertain results. Each person gets the same trade at most once. Stop can’t cancel sent trades; manage those in Roblox Outbound. Mass trading can get an account limited, so use it carefully.</small>
 </fieldset>
 <script src="popup.js"></script><script src="ad-finder-ui.js"></script><script src="mass-trades-ui.js"></script></body></html>

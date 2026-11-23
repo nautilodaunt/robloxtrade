@@ -69,3 +69,24 @@ test('cooldown retains the original error and expires despite repeated checks', 
   await request(true);
   assert.equal(requests, 3);
 });
+
+test('trade data requests come only from Roblox top frames with numeric IDs', async () => {
+  let handler;
+  const fetched = [];
+  const context = vm.createContext({
+    AbortSignal,
+    fetch: async url => { fetched.push(url); return { ok: true, json: async () => ({ id: 123 }) }; },
+    chrome: { runtime: { id: 'test', onMessage: { addListener: fn => { handler = fn; } } } }
+  });
+  context.importScripts = () => vm.runInContext(fs.readFileSync('src/values.js', 'utf8'), context);
+  vm.runInContext(fs.readFileSync('src/background.js', 'utf8'), context);
+  const page = { id: 'test', url: 'https://www.roblox.com/trades', frameId: 0, tab: { id: 1, url: 'https://www.roblox.com/trades' } };
+  const ask = (message, sender) => new Promise(resolve => { if (handler(message, sender, resolve) !== true) resolve(undefined); });
+  assert.equal((await ask({ type: 'GET_TRADE_DATA', tradeId: '123' }, page)).ok, true);
+  assert.equal(fetched[0], 'https://trades.roblox.com/v2/trades/123');
+  assert.equal(await ask({ type: 'GET_TRADE_DATA', tradeId: '1/../../v1/users' }, page), undefined);
+  // Another site's frame inside a Roblox tab is not a Roblox page.
+  assert.equal(await ask({ type: 'GET_TRADE_DATA', tradeId: '123' }, { ...page, url: 'https://evil.example/', frameId: 3 }), undefined);
+  assert.equal(await ask({ type: 'GET_TRADE_DATA', status: 'Inbound' }, { id: 'test', url: 'chrome-extension://test/src/popup.html' }), undefined);
+  assert.equal(fetched.length, 1);
+});
