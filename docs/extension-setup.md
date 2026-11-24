@@ -84,7 +84,66 @@ Automated tests cover the v2 payload, exact and tag matching, value and projecte
 
 ## Security hardening (0.5.1)
 
-- **Trade overlay:** items are matched to Rolimon’s values by ID. Only migrated face bundles are still matched by name, and they are counted as **name-matched**. Items valued at a RAP that Rolimon’s marks as projected show **projected RAP**. In the trade list, items Rolimon’s does not list are valued at Roblox’s own RAP, which can be pumped, so they are flagged too. If what you receive includes any of these, a gain is shown in amber with **⚠ Verify** instead of green. Trade IDs read from the page must be numeric.
+- **Trade overlay:** items are matched to Rolimon’s values by ID. Migrated face bundles are matched to their original item by name and use its migrated value. Items Rolimon’s marks as projected get a **Projected** tag on their thumbnail (and a **Projected** line in the trade list). In the trade list, items Rolimon’s does not list are valued at Roblox’s own RAP, which can be pumped; if what you receive includes any of these, a gain is shown in amber with **⚠ Verify** instead of green. Trade IDs read from the page must be numeric.
+- **Demand:** Rolimon’s demand is shown on a 0–5 scale (0 None, 1 Terrible, 2 Low, 3 Normal, 4 High, 5 Amazing). Items with no Rolimon’s value (RAP-only) or no assigned demand count as 0. Each side shows **Avg demand** below its total, and the trade summary shows give → receive average demand.
+- **Item details on hover:** hover an item in a trade for about half a second to open a panel with its value, RAP, best price, demand, trend, sellers, sales per day, a RAP / best-price chart (30 days, 90 days or 1 year), recent Rolimon’s value and demand changes, and the odds of a Rolimon’s value change. Click the panel to pin it; press Esc or click elsewhere to close. History is read from the item’s rolimons.com page and cached for 10 minutes.
+- **Rolimon’s value change odds:** for valued items, the panel shows the chance that Rolimon’s raises or lowers the value within **7, 14 or 30 days** (toggle 7D / 14D / 30D), next to how often that usually happens and the model’s backtest hit rate. Unvalued (RAP-only) items show “No prediction (unvalued item)”. See [Value change model](#value-change-model).
 - **Auto trade ads:** the panel on Rolimon’s uses a closed shadow root, so page scripts cannot click its buttons. Each post is rebuilt from the saved selections and checked again; invalid saved data pauses posting. A cooldown time supplied by the page is ignored unless it ends within a day.
 - **Ad finder:** trade and profile links are built from the numeric user ID, not read from storage.
 - **Manifest:** requires Chrome 110 or later and cannot be enabled in Incognito, where the worker would use your regular profile’s Roblox and Rolimon’s sessions.
+
+## Value change model
+
+The odds come from gradient boosted trees (`src/value-model.js` for features and scoring, `src/value-model-data.js` for the generated trees), run in the service worker. For each horizon there are two models: “value higher after N days” and “value lower after N days”. Inputs are only data from before the prediction time: RAP and best price against value (7/30/90 days), RAP momentum, sellers, favorites, sales prices and volume, time since and size of the last value change, raises and lowers in the past year, Rolimon’s demand, trend, projected and hyped flags, and item age.
+
+Training uses every valued item’s full Rolimon’s history since 2018 as weekly snapshots. It is tested honestly: tuned on data before the last six months, then scored on those months, which it never saw, against two simple rules (RAP vs value, and Rolimon’s own trend tag). The shipped model is then retrained on all data. Results are in `tools/data/model-report.json`.
+
+To retrain (every 1–2 months; a backtest showed the ranking of items barely ages, but the shown percentages drift noticeably after about 3 months). The item panel shows the model’s age (“Model is 3 days old”), measured from the Rolimon’s data it was trained on; it turns yellow at 60 days and red at 90 days.
+
+1. `node tools/collect-rolimons.cjs --refresh` saves each valued item’s rolimons.com page data to `tools/data/` (one request about every 2 seconds; it stops if rate limited repeatedly or shown a verification page). `--refresh` re-downloads items saved more than a day ago (change with `--max-age DAYS`) and refreshes the valued item list. If it stops, run the same command later and it continues where it left off. Without `--refresh` it only downloads items not saved yet.
+2. `node tools/train-value-model.cjs` writes `src/value-model-data.js`, `tools/data/train.log` and `tools/data/model-report.json`. Optional: `--test 2026-05-01 --valid 2025-11-01` to move the test window.
+3. Reload the extension.
+
+Limitations: value changes are rare (most weeks nothing changes), Rolimon’s decisions can follow events the data doesn’t show (owner leaks, hoards, community discussion), and the rates drift over time, so treat the odds as a signal, not a promise.
+
+## Value deal finder (0.6.0)
+
+Finds recent Rolimon’s trade ads where you would **gain Rolimon’s value** with items you actually own. It never sends trades: each result links to the poster’s Roblox trade page so you make the offer yourself.
+
+1. In the popup, click **Open value deal finder ↗**. It opens in its own tab.
+2. Click **Load my inventory**. It reads your tradable copies from Roblox (you must be signed in to roblox.com in this Chrome profile).
+3. Set **Min gain %**, **Max gain %**, the minimum demand of what you get, which ad types and request tags to fill, and any items to **never offer**. Then click **Find deals**, optionally watching new ads for 15 minutes to 2 hours.
+
+How deals are found:
+
+- **Ads asking for items you own:** you give exactly the requested copies (plus the cheapest single extra item if a tag such as **Adds** requires it), and the gain is their offer minus your items.
+- **Tag-only ads** (Any, Upgrade, Downgrade, Adds, Demand, Rares, RAP, Projecteds): it tries every combination of one to four of your 30 most valuable copies and picks the one **closest to fair** that still gains at least the minimum and stays within the maximum. It only counts a tag your items really fit (Upgrade = they receive fewer items, or the same number with a bigger top item; Downgrade = more items; Demand = all your items are High or Amazing).
+- What you get counts at **Rolimon’s value only**; RAP-only items count as 0 and are flagged. What you give uses value, or RAP if unvalued, so gains are understated rather than overstated.
+- Skipped: ads asking for Robux or Wishlist only, ads offering projected or unknown items, your own ads, items on hold, and ads older than 30 minutes.
+- Results are ranked by how likely the poster is to accept: **They asked for this** (the ad names exactly what you give) first, then **Upgrade premium** (upgraders often pay extra to consolidate), then **Your lowball offer** (Any/Downgrade/other tags, where you propose the gain). Within each group, bigger gains come first. Cards show both sides with demand, warnings when you would receive lower average demand, and how many times the poster reposted while you watched.
+
+Limits: Rolimon’s recent-ads feed covers only the last few minutes, so watching finds far more. Watching scans once a minute, reloads your inventory every 10 minutes, and stops on a rate limit or after 5 failed scans in a row. A value gain on paper doesn’t mean the poster will accept or that the items will hold value: check demand and the hover panel’s value odds first.
+
+
+
+## Portfolio & risk analyzer (0.7.0)
+
+Scores a Roblox inventory for risk and answers **“should I do anything?”**. It's read-only: it never sends trades.
+
+1. In the popup, click **Open portfolio & risk analyzer ↗**.
+2. **Lookup:** enter a Roblox **user ID** or **username** and click **Analyze**. Leave it blank, or click **My inventory**, to analyze your own. You must be signed in to roblox.com. Other users whose inventory is private or who can't trade show a clear message instead. Recent lookups appear as chips.
+3. The report shows:
+   - Total value (Rolimon's value, or RAP for unvalued items), RAP, holdings, value on trade hold and a 0–100 **risk score** (Low < 35 ≤ Moderate < 65 ≤ High).
+   - **Should I do anything?** gives a verdict (Yes / Maybe / No) plus prioritized action cards:
+     - **Trade away soon:** projected items, or items with high model odds of a value lower.
+     - **At risk but on hold:** the same, but the copies can't be traded yet.
+     - **Spread risk:** one weaker item is over 50% of the value, or 3+ copies of one item are over 35%.
+     - **Upgrade clutter:** 4+ low-demand or RAP-only copies.
+     - **Hold:** likely risers. For your own inventory, a **Protect in deal finder** button adds them to the deal finder's *Never offer* list. That list syncs both ways.
+   - **30-day outlook:** the share of value that's likely to rise, stay stable or drop. **Value history** keeps one point per day each time you load a portfolio (180 days, 20 users).
+   - **Risk breakdown:** value drop / projected, concentration (HHI and top holding), low demand / liquidity, and value locked on hold. Each comes with the points it adds.
+   - **Holdings:** filter and sort by risk, value, odds of a lower or raise, or RAP under value. Each row shows demand, trend, RAP gap, signals, model odds and serials. Rows in your own inventory also have a *Never offer* toggle.
+4. **Deep model scan** (separate button): fetches each valued item's Rolimon's page, most valuable first, about one every 1.2 seconds, and runs the built-in value model for 7/14/30-day raise and lower odds. Results are cached for 6 hours. It never runs on its own. It stops on a rate limit (429), a block (403) or 3 failures in a row, and **Stop** ends it after the current item. Items without model odds are scored from Rolimon's trend, demand and RAP vs value.
+5. **What-if trade simulator:** pick up to 4 of the copies to give and up to 4 items to get (name, acronym or ID). It compares value, RAP, risk score and meters before and after, and lists warnings: projected or RAP-only items, drop risk, giving away a likely riser, lower demand, losing value, or items on hold. It also shows which advisor actions the trade would resolve or create. **Get model odds for items you'd receive** deep-scans just those items.
+
+Risk scores are estimates from Rolimon's data and the value model, not guarantees. Always check the item page before trading.

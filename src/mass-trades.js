@@ -356,5 +356,6 @@ const MassTrades = (() => {
   }).catch(console.error);
   chrome.runtime.onStartup.addListener(restore);
   chrome.runtime.onInstalled.addListener(restore);
-  return { same, subset, matches, tagSatisfied, ownCopies, requestedCopies, valuation, rules, TAGS };
+  // request/account/tradable/values are reused by the value deal finder (same worker, read-only calls).
+  return { same, subset, matches, tagSatisfied, ownCopies, requestedCopies, valuation, rules, TAGS, request, account, tradable, values };
 })();

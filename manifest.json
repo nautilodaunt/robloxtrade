@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Roblox Trade Assistant",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "minimum_chrome_version": "110",
   "incognito": "not_allowed",
-  "description": "Display trade values, schedule trade ads, and mass send reviewed trades to matching Rolimon's ads.",
+  "description": "Display trade values and value-change odds, analyze portfolio risk, find value-gain trade ads, schedule trade ads, and mass send reviewed trades.",
   "permissions": [
     "storage",
     "alarms",
@@ -27,6 +27,7 @@
       ],
       "js": [
         "src/values.js",
+        "src/item-insights.js",
         "src/content.js"
       ],
       "css": [

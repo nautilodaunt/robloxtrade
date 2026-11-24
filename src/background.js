@@ -1,4 +1,7 @@
 importScripts("values.js");
+importScripts("item-insights.js");
+importScripts("value-model.js");
+importScripts("value-model-data.js");
 
 const ENDPOINT = "https://api.rolimons.com/items/v2/itemdetails";
 const CACHE_MS = 5 * 60 * 1000;
@@ -6,6 +9,34 @@ const RETRY_MS = 60 * 1000;
 let pending;
 let retryAfter = 0;
 let lastError = null;
+
+// Item history for the hover panel, read from the item's Rolimon's page.
+const insights = new Map();
+function getInsight(id) {
+  const hit = insights.get(id);
+  if (hit && Date.now() < hit.expires) return hit.promise;
+  const promise = (async () => {
+    if (chrome.permissions && !await chrome.permissions.contains({ origins: ['https://www.rolimons.com/*'] })) {
+      throw new Error("Chrome has not granted rolimons.com access.");
+    }
+    const response = await fetch(`https://www.rolimons.com/item/${id}`, { credentials: "omit", signal: AbortSignal.timeout(20000) });
+    if (!response.ok) throw new Error(`Rolimon's item page failed (${response.status})`);
+    const html = await response.text();
+    const result = ItemInsights.parseItemPage(html);
+    result.prediction = null;
+    // Value change odds, for valued items only (RAP-only items get none).
+    if (result.details.value > 0 && globalThis.ValueModel) {
+      try {
+        result.prediction = ValueModel.predict(ItemInsights.normalizePage(html, Date.now() / 1000 - 120 * 86400));
+      } catch { /* the chart still works without a prediction */ }
+    }
+    return result;
+  })();
+  insights.set(id, { promise, expires: Date.now() + 10 * 60 * 1000 });
+  promise.catch(() => { if (insights.get(id)?.promise === promise) insights.get(id).expires = Date.now() + RETRY_MS; });
+  if (insights.size > 60) insights.delete(insights.keys().next().value);
+  return promise;
+}
 
 async function getValues(force = false) {
   if (chrome.permissions && !await chrome.permissions.contains({ origins: ['https://api.rolimons.com/*'] })) {
@@ -59,6 +90,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }).then(result => respond({ ok: true, result }), error => respond({ ok: false, error: error.message }));
     return true;
   }
+  if (message?.type === 'GET_ITEM_INSIGHT') {
+    // Only a numeric item ID reaches the fixed Rolimon's item URL.
+    const id = String(message.itemId || '');
+    if (!/^\d{1,20}$/.test(id)) return;
+    getInsight(id).then(result => respond({ ok: true, result }), error => respond({ ok: false, error: error.message }));
+    return true;
+  }
   if (message?.type !== "GET_ROLIMONS_VALUES") return;
   // Fixed endpoint only: messages cannot turn this worker into a fetch proxy.
   if (!pending) pending = getValues(message.force === true && !sender.tab).finally(() => { pending = null; });
@@ -72,3 +110,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 importScripts("trade-ads.js");
 importScripts("mass-trades.js");
 importScripts("ad-finder.js");
+importScripts("deal-finder.js");
+importScripts("portfolio-risk.js");
+importScripts("portfolio-worker.js");

@@ -267,31 +267,40 @@ test('list totals never give a look-alike asset the value of a limited with the 
   } finally { dom.window.close(); }
 });
 
-test('a gain that depends on a projected RAP is shown as a caution', async () => {
+test('projected items get a tag instead of a caution', async () => {
   const current = { ...data, items: { 1: { name: 'Valued', value: 1000, rap: 900 }, 3: { name: 'Projected', value: null, rap: 9000, projected: true } } };
   const dom = await page(`<div class="trade-offer">${card(1)}<div class="robux-line">Robux: 0</div></div>
     <div class="trade-request">${card(3)}<div class="robux-line">Robux: 0</div></div>`, current);
   try {
     const doc = dom.window.document;
     const box = doc.querySelector('.rta-trade-summary');
-    assert.equal(box.dataset.result, 'caution');
-    assert.match(box.textContent, /⚠ Verify: 1 projected item at RAP/);
-    assert.match(doc.querySelector('.trade-request .rta-item-value').textContent, /9,000 \(projected RAP\)/);
+    assert.equal(box.dataset.result, 'gain');
+    assert.doesNotMatch(box.textContent, /Verify/);
+    assert.match(box.textContent, /1 projected/);
+    assert.equal(doc.querySelectorAll('.rta-projected-tag').length, 1);
+    assert.equal(doc.querySelector('.trade-request .item-card').firstElementChild.className, 'rta-projected-tag');
+    assert.equal(doc.querySelector('.trade-offer .rta-projected-tag'), null);
+    assert.match(doc.querySelector('.trade-request .rta-item-value').textContent, /9,000 \(RAP\)/);
+    assert.equal(doc.querySelector('.trade-request .rta-item-value .rta-projected-badge').textContent, 'Projected');
+    assert.equal(doc.querySelector('.trade-offer .rta-projected-badge'), null);
     assert.match(doc.querySelector('.trade-request .rta-value-row').textContent, /1 RAP fallback, 1 projected/);
+    doc.querySelector('.trade-request a').href = '/catalog/1/item';
+    doc.querySelectorAll('.trade-request a')[1].href = '/catalog/1/item';
+    await pause();
+    assert.equal(doc.querySelectorAll('.rta-projected-tag').length, 0);
   } finally { dom.window.close(); }
 });
 
-test('a gain from a bundle matched only by name is shown as a caution', async () => {
+test('migrated faces use the migrated value without a caution', async () => {
   const current = { ...data, items: { 1: { name: 'Valued', value: 1000 }, 2409285794: { name: 'Playful Vampire', value: 42000 } } };
   const dom = await page(`<div class="trade-offer">${card(1)}<div class="robux-line">Robux: 0</div></div>
     <div class="trade-request"><div class="item-card"><a href="/bundles/105919952545574/Playful-Vampire">Playful Vampire</a></div><div class="robux-line">Robux: 0</div></div>`, current);
   try {
     const doc = dom.window.document;
     const box = doc.querySelector('.rta-trade-summary');
-    assert.equal(box.dataset.result, 'caution');
-    assert.match(box.textContent, /⚠ Verify: 1 bundle matched by name/);
-    assert.match(box.title, /check those items/);
-    assert.match(doc.querySelector('.trade-request .rta-item-value').title, /matched to this item by name/);
+    assert.equal(box.dataset.result, 'gain');
+    assert.doesNotMatch(box.textContent, /Verify|name-matched/);
+    assert.match(doc.querySelector('.trade-request .rta-item-value').textContent, /42,000/);
   } finally { dom.window.close(); }
 });
 
@@ -331,5 +340,40 @@ test('a list gain that relies on Roblox RAP for an item Rolimon’s does not lis
     assert.equal(box.dataset.result, 'caution');
     assert.match(box.textContent, /Give 4,700\nReceive 90,000\n.*\n⚠ Verify items/);
     assert.match(box.title, /1 item not on Rolimon’s \(Roblox RAP\)/);
+  } finally { dom.window.close(); }
+});
+
+test('average 0–5 demand shows below each side total and in the summary; RAP-only items count as 0', async () => {
+  const current = { ...data, items: { 1: { name: 'A', value: 1000, demand: 4 }, 2: { name: 'B', value: 500, demand: 1 }, 3: { name: 'R', value: null, rap: 800, demand: 3 } } };
+  const dom = await page(`<div class="trade-offer">${card(1)}${card(2)}<div class="robux-line">Robux: 0</div></div>
+    <div class="trade-request">${card(3)}<div class="robux-line">Robux: 0</div></div>`, current);
+  try {
+    const doc = dom.window.document;
+    const rows = [...doc.querySelectorAll('.rta-demand-row')];
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].previousElementSibling.className, 'rta-value-row');
+    assert.equal(rows[0].textContent, 'Avg demand: 3.5 / 5 (High)');
+    assert.equal(rows[1].textContent, 'Avg demand: 0.0 / 5 (None)');
+    assert.equal(rows[0].nextElementSibling.className, 'rta-robux-total');
+    assert.match(doc.querySelector('.rta-trade-summary').textContent, /Avg demand 3\.5 → 0\.0 \/ 5/);
+  } finally { dom.window.close(); }
+});
+
+test('two copies of the same item count twice even without known card classes', async () => {
+  const current = { ...data, items: { 5: { name: 'Hat', value: 1000 }, 6: { name: 'Other', value: 300 } } };
+  const copy = id => `<div class="x"><a href="/catalog/${id}/hat"><img src="a.png"></a><a href="/catalog/${id}/hat">Hat</a></div>`;
+  const dom = await page(`<main>
+    <h3>Items you will give</h3>
+    <div class="grid">${copy(5)}${copy(5)}<div><a href="/catalog/6/o"><img src="b.png"><span>Other</span></a></div></div>
+    <div class="total"><span>Total Value:</span><strong>0</strong></div>
+    <h3>Items you will receive</h3>
+    <div class="grid">${copy(6)}</div>
+    <div class="total"><span>Total Value:</span><strong>0</strong></div>
+    </main>`, current);
+  try {
+    const rows = [...dom.window.document.querySelectorAll('.rta-value-row')];
+    assert.equal(rows[0].textContent, "Rolimon's value: 2,300");
+    assert.equal(rows[1].textContent, "Rolimon's value: 300");
+    assert.equal(dom.window.document.querySelectorAll('.rta-item-value').length, 4);
   } finally { dom.window.close(); }
 });

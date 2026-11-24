@@ -59,6 +59,128 @@
 .rta-trade-summary[data-result="gain"] { border-color: #22a65a; background: rgba(34, 166, 90, .12); }
 .rta-trade-summary[data-result="loss"] { border-color: #da4453; background: rgba(218, 68, 83, .12); }
 .rta-trade-summary[data-result="caution"] { border-color: #e0a100; background: rgba(224, 161, 0, .14); }
+.rta-tag-host { position: relative; }
+.rta-projected-tag {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #e0a100;
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  pointer-events: none;
+}
+.rta-projected-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #e0a100;
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.6;
+  vertical-align: 1px;
+}
+.rta-demand-row {
+  display: block;
+  padding: 0 0 8px;
+  margin-top: -6px;
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: .85;
+}
+.rta-insight {
+  position: fixed;
+  z-index: 2147483000;
+  width: 360px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background: #1f2329;
+  color: #e9ecef;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  font: 500 12px/1.45 "Builder Sans", "Segoe UI", Arial, sans-serif;
+  text-align: left;
+}
+.rta-insight.rta-pinned { border-color: #0084dd; }
+.rta-insight-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.rta-insight-head .rta-logo { width: 11px; height: 15px; flex: none; }
+.rta-insight-name { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rta-insight-link { color: #4db3ff !important; font-size: 11px; text-decoration: none; }
+.rta-insight-close {
+  border: 0; background: transparent; color: inherit; cursor: pointer;
+  font-size: 18px; line-height: 1; padding: 0 2px; opacity: .7;
+}
+.rta-insight-close:hover { opacity: 1; }
+.rta-insight-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 10px; margin-bottom: 8px; }
+.rta-insight-stat { display: flex; flex-direction: column; min-width: 0; }
+.rta-insight-label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
+.rta-insight-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rta-insight-flags { grid-column: 1 / -1; display: flex; gap: 5px; }
+.rta-flag { padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #1a1a1a; }
+.rta-flag-projected { background: #e0a100; }
+.rta-flag-hyped { background: #ff7a45; }
+.rta-flag-rare { background: #b37feb; }
+.rta-demand-0 { opacity: .6; }
+.rta-demand-1, .rta-demand-2 { color: #ff7875; }
+.rta-demand-3 { color: #ffd666; }
+.rta-demand-4, .rta-demand-5 { color: #73d13d; }
+.rta-up { color: #73d13d; }
+.rta-down { color: #ff7875; }
+.rta-insight-ranges { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.rta-range {
+  border: 1px solid rgba(255, 255, 255, .18); background: transparent; color: inherit;
+  border-radius: 4px; padding: 0 7px; font-size: 11px; cursor: pointer;
+}
+.rta-range.rta-active { background: #0084dd; border-color: #0084dd; color: #fff; }
+.rta-chart-legend { margin-left: auto; display: flex; gap: 8px; font-size: 10px; opacity: .8; }
+.rta-key-rap::before, .rta-key-best::before { content: ""; display: inline-block; width: 10px; height: 2px; margin-right: 4px; vertical-align: middle; }
+.rta-key-rap::before { background: #4db3ff; }
+.rta-key-best::before { background: #8c939d; }
+.rta-chart-wrap { position: relative; }
+.rta-chart { display: block; width: 100%; height: 130px; background: rgba(255, 255, 255, .03); border-radius: 6px; cursor: crosshair; }
+.rta-chart polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.rta-line-rap { stroke: #4db3ff; }
+.rta-line-best { stroke: #8c939d; stroke-width: 1; opacity: .8; }
+.rta-chart-cursor { stroke: rgba(255, 255, 255, .35); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.rta-chart-axis {
+  position: absolute; inset: 2px 4px; display: flex; flex-direction: column; justify-content: space-between;
+  align-items: flex-end; pointer-events: none; font-size: 10px; opacity: .6;
+}
+.rta-chart-dates { display: flex; justify-content: space-between; font-size: 10px; opacity: .6; }
+.rta-chart-readout { min-height: 16px; font-size: 11px; font-variant-numeric: tabular-nums; opacity: .9; }
+.rta-insight-empty { padding: 20px 0; text-align: center; opacity: .6; }
+.rta-forecast { margin-top: 8px; padding: 6px 8px; border-radius: 6px; border-left: 4px solid #8c939d; background: rgba(255, 255, 255, .04); }
+.rta-forecast-rise { border-color: #22a65a; }
+.rta-forecast-fall { border-color: #da4453; }
+.rta-forecast-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.rta-forecast-days { display: flex; gap: 3px; }
+.rta-forecast-verdict { margin: 4px 0 2px; font-weight: 600; }
+.rta-forecast-rise .rta-forecast-verdict { color: #73d13d; }
+.rta-forecast-fall .rta-forecast-verdict { color: #ff7875; }
+.rta-forecast-none { margin-top: 4px; font-size: 11px; opacity: .7; }
+.rta-odds-row { display: grid; grid-template-columns: 44px 1fr 36px 72px; align-items: center; gap: 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.rta-odds-bar { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.rta-odds-fill { display: block; height: 100%; border-radius: 3px; }
+.rta-odds-fill.rta-up { background: #22a65a; }
+.rta-odds-fill.rta-down { background: #da4453; }
+.rta-odds-pct { text-align: right; }
+.rta-odds-base { font-size: 10px; opacity: .6; }
+.rta-forecast-test { margin-top: 4px; font-size: 10px; opacity: .6; }
+.rta-model-age { margin-top: 4px; font-size: 10px; opacity: .6; }
+.rta-model-age-old { opacity: 1; color: #d4b106; font-weight: 600; }
+.rta-model-age-stale { opacity: 1; color: #ff4d4f; font-weight: 600; }
+.rta-insight-changes { margin-top: 8px; font-size: 11px; }
+.rta-insight-note { margin-top: 8px; font-size: 10px; opacity: .5; }
 .rta-robux-total { display: block; font-size: 13px; font-weight: 500; }
 .rta-list-host { position: relative !important; padding-right: 165px !important; min-height: 108px; }
 .rta-list-summary {
