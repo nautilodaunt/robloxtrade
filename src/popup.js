@@ -55,4 +55,5 @@ async function updateAds(type = 'GET_AD_STATUS') {
 document.getElementById('ad-stop').addEventListener('click', () => updateAds('STOP_ADS'));
 document.getElementById('open-deals').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/deals.html') }));
 document.getElementById('open-portfolio').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/portfolio.html') }));
+document.getElementById('open-limiteds').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/limiteds.html') }));
 updateAds();

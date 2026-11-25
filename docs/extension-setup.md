@@ -147,3 +147,26 @@ Scores a Roblox inventory for risk and answers **“should I do anything?”**. 
 5. **What-if trade simulator:** pick up to 4 of the copies to give and up to 4 items to get (name, acronym or ID). It compares value, RAP, risk score and meters before and after, and lists warnings: projected or RAP-only items, drop risk, giving away a likely riser, lower demand, losing value, or items on hold. It also shows which advisor actions the trade would resolve or create. **Get model odds for items you'd receive** deep-scans just those items.
 
 Risk scores are estimates from Rolimon's data and the value model, not guarantees. Always check the item page before trading.
+
+## Limiteds browser (0.8.0)
+
+Browse **valued** limiteds (items with a Rolimon's value; RAP-only items are left out) in a value range, ranked by the value model's odds of a value **raise**. It doesn't need a Roblox sign-in.
+
+1. In the popup, click **Open limiteds browser ↗**.
+2. Set **Min / Max value** (`25000`, `25k` or `1.5m`; blank means no limit). Optionally set a minimum demand, a name or acronym search, and whether to include projected items. Click **Show items**. Filtering is instant because it only uses Rolimon's value list.
+3. Pick **Raise within** (7, 14 or 30 days) and **Sort by**:
+   - **Raise odds** (default)
+   - **Raise vs usual** (how many times the normal rate)
+   - **Raise − lower odds**
+   - **Lowest lower odds**
+   - **Value**
+4. Click **Scan model odds**. Model odds need each item's Rolimon's page, so the scan takes about one new item per 1.2 seconds, up to the **Scan up to** limit you pick (25–500). **Scan all** does every unscanned item in the current filter, with the same pacing; the button shows the count and estimated time, and runs over 100 items ask to confirm first. Keep the tab open while it runs; anything scanned before you stop or close it stays saved. It starts with the most promising items: Raising trend, RAP above value, hyped, high demand. The list re-ranks live as odds arrive. Click **Stop** any time; the scan also stops on a rate limit or block.
+
+The odds cache (6 hours) is shared with the portfolio analyzer, so items either page has scanned are free. Each row shows:
+
+- a **Likely raise / Possible raise / Likely lower** label (same thresholds as the hover panel)
+- the raise odds next to the usual rate, and the odds of a lower
+- 7/14/30-day odds
+- value, RAP gap, demand, trend, 30-day RAP change, sales per day and sellers
+
+Items without enough recent data get no model odds and rank after scanned items.

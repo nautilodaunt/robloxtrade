@@ -70,6 +70,10 @@ function setup() {
   return {
     state, session, local, calls, insightCalls,
     command: (type, extra = {}) => new Promise(resolve => dispatch({ type, ...extra }, PAGE, r => resolve(JSON.parse(JSON.stringify(r))))),
+    from: (sender, type, extra = {}) => new Promise((resolve, reject) => {
+      const handled = dispatch({ type, ...extra }, sender, r => resolve(JSON.parse(JSON.stringify(r))));
+      if (handled !== true) resolve(undefined);
+    }),
     untrusted: sender => dispatch({ type: 'PORTFOLIO_LOAD' }, sender, () => assert.fail('Untrusted sender accepted')),
     advance: ms => { now += ms; }
   };
@@ -166,4 +170,22 @@ test('protect / unprotect syncs with the deal finder never-offer list', async ()
   const mixed = await app.command('PORTFOLIO_KEEP', { instanceIds: ['copy-0001-aaaa'], keep: true });
   assert.equal(mixed.ok, false);
   assert.match(mixed.error, /another Roblox account/);
+});
+
+test('the limiteds browser gets values and odds without sign-in, and nothing else', async () => {
+  const app = setup();
+  const browser = { id: 'test', url: 'chrome-extension://test/src/limiteds.html' };
+  await app.command('PORTFOLIO_INSIGHT', { assetId: 2 });
+  const r = await app.from(browser, 'LIMITEDS_CATALOG');
+  assert.equal(r.ok, true, r.error);
+  assert.equal(r.catalog[1].name, 'Big Hat');
+  assert.ok(r.insights[2].prediction);
+  assert.equal(r.model.dataAt, '2026-11-01T00:00:00Z');
+  assert.equal(app.calls.some(c => c.url.includes('/users/authenticated')), false, 'no Roblox account needed');
+  assert.equal((await app.from(browser, 'PORTFOLIO_INSIGHT', { assetId: 2 })).cached, true);
+  // Inventory lookups and the never-offer list stay portfolio-only; the catalog stays extension-only.
+  assert.equal(await app.from(browser, 'PORTFOLIO_LOAD', { target: '42' }), undefined);
+  assert.equal(await app.from(browser, 'PORTFOLIO_KEEP', { instanceIds: ['copy-0001-aaaa'], keep: true }), undefined);
+  assert.equal(await app.from({ id: 'test', url: 'https://www.rolimons.com/' }, 'LIMITEDS_CATALOG'), undefined);
+  assert.equal(await app.from({ id: 'other', url: 'chrome-extension://test/src/limiteds.html' }, 'LIMITEDS_CATALOG'), undefined);
 });

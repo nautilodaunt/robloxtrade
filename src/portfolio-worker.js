@@ -2,10 +2,15 @@
 // Roblox user's tradable limiteds, caches per-item model odds (one paced Rolimon's page at a time,
 // only when the page asks), and syncs "never offer" with the deal finder for your own items.
 const PortfolioWorker = (() => {
-  const PAGE = 'src/portfolio.html', USERS = 'https://users.roblox.com';
-  const TYPES = ['PORTFOLIO_STATUS', 'PORTFOLIO_LOAD', 'PORTFOLIO_INSIGHT', 'PORTFOLIO_KEEP'];
+  const USERS = 'https://users.roblox.com';
+  // Which extension page may send which message. The limiteds browser only reads values and odds.
+  const ACCESS = {
+    'src/portfolio.html': ['PORTFOLIO_STATUS', 'PORTFOLIO_LOAD', 'PORTFOLIO_INSIGHT', 'PORTFOLIO_KEEP'],
+    'src/limiteds.html': ['LIMITEDS_CATALOG', 'PORTFOLIO_INSIGHT']
+  };
+  const TYPES = [...new Set(Object.values(ACCESS).flat())];
   const INSIGHTS = 'portfolioInsights', HISTORY = 'portfolioHistory', RECENT = 'portfolioRecent';
-  const DEEP_GAP_MS = 1200, PRUNE_MS = 24 * 3600e3, MAX_INSIGHTS = 2000, MAX_USERS = 20, MAX_RECENT = 8, MAX_KEEP = 100;
+  const DEEP_GAP_MS = 1200, PRUNE_MS = 24 * 3600e3, MAX_INSIGHTS = 5000, MAX_USERS = 20, MAX_RECENT = 8, MAX_KEEP = 100;
 
   const validId = id => Number.isSafeInteger(id) && id > 0;
   const validInstance = id => typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id);
@@ -14,6 +19,27 @@ const PortfolioWorker = (() => {
   const local = () => chrome.storage.local;
   const get = async key => (await local().get(key))[key];
   const fail = (message, stop = false) => Object.assign(new Error(message), { stop });
+
+  // Chrome lets users withhold site access (chrome://extensions → Details → Site access). Then every
+  // fetch fails with a bare "Failed to fetch", so check first and let the page offer a grant button.
+  const ORIGINS = { roblox: ['https://users.roblox.com/*', 'https://trades.roblox.com/*'], values: ['https://api.rolimons.com/*'] };
+  async function requireAccess(origins) {
+    if (!chrome.permissions?.contains || await chrome.permissions.contains({ origins })) return;
+    throw Object.assign(fail('Chrome is blocking the extension from Roblox / Rolimon’s because its site access is restricted. Click “Allow access”, or set Site access to “On all sites” in chrome://extensions → Details.'), { access: true });
+  }
+  // Read-only lookups get one retry on a network-level failure (status 0), then a clearer error.
+  async function retry(fn) {
+    try { return await fn(); }
+    catch (error) {
+      if (error.status !== 0) throw error;
+      await sleep(800);
+      try { return await fn(); }
+      catch (again) {
+        if (again.status !== 0) throw again;
+        throw Object.assign(fail(`${again.message} If it keeps happening: reload the extension in chrome://extensions, set its Site access to “On all sites”, and allow roblox.com in any ad/privacy blocker, VPN or firewall.`), { access: true, status: 0 });
+      }
+    }
+  }
 
   // Read-modify-write of local storage happens one at a time.
   let store = Promise.resolve();
@@ -42,17 +68,17 @@ const PortfolioWorker = (() => {
       const id = Number(text);
       if (!validId(id)) throw fail('Enter a valid Roblox user ID.');
       if (id === me.id) return me;
-      const user = await MassTrades.request(`${USERS}/v1/users/${id}`, { credentials: 'omit' }).catch(error => {
+      const user = await retry(() => MassTrades.request(`${USERS}/v1/users/${id}`, { credentials: 'omit' })).catch(error => {
         throw error.status === 404 || error.status === 400 ? fail(`No Roblox user with ID ${id}.`) : error;
       });
       if (user?.id !== id) throw fail(`No Roblox user with ID ${id}.`);
       return userView(user);
     }
     if (!/^[A-Za-z0-9_]{3,20}$/.test(text)) throw fail('Enter a Roblox username (3–20 letters, numbers or _) or a numeric user ID.');
-    const data = await MassTrades.request(`${USERS}/v1/usernames/users`, {
+    const data = await retry(() => MassTrades.request(`${USERS}/v1/usernames/users`, {
       method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ usernames: [text], excludeBannedUsers: false })
-    });
+    }));
     const user = Array.isArray(data?.data) ? data.data[0] : null;
     if (!validId(user?.id)) throw fail(`No Roblox user named “${text}”.`);
     return user.id === me.id ? me : userView(user);
@@ -81,16 +107,17 @@ const PortfolioWorker = (() => {
   }
 
   async function load(message) {
-    const me = { ...(await MassTrades.account()) };
+    await requireAccess([...ORIGINS.roblox, ...ORIGINS.values]);
+    const me = { ...(await retry(() => MassTrades.account())) };
     me.displayName = me.name;
     const owner = await resolveUser(message.target, me), isSelf = owner.id === me.id;
     let copies;
-    try { copies = await MassTrades.tradable(owner.id); }
+    try { copies = await retry(() => MassTrades.tradable(owner.id)); }
     catch (error) {
       if (!isSelf && [400, 403, 404].includes(error.status)) throw fail(`${owner.name} won’t show their inventory (private, banned or trading unavailable).`);
       throw error;
     }
-    const catalog = await MassTrades.values();
+    const catalog = await retry(() => MassTrades.values());
     const insights = fresh(await get(INSIGHTS));
     const analysis = PortfolioRisk.analyze(copies, catalog, insights);
     const history = await saveHistory(owner.id, PortfolioRisk.snapshot(analysis));
@@ -144,12 +171,17 @@ const PortfolioWorker = (() => {
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_KEEP || !ids.every(validInstance) || typeof message.keep !== 'boolean') {
       throw fail('Invalid protect request.');
     }
-    const me = await MassTrades.account();
+    const me = await retry(() => MassTrades.account());
     return { keep: await DealFinder.setKeep(ids, message.keep, me.id) };
   }
 
   async function command(message) {
     if (message.type === 'PORTFOLIO_STATUS') return { recent: await recentList(), model: modelInfo() };
+    // Public Rolimon's values only: no Roblox sign-in needed.
+    if (message.type === 'LIMITEDS_CATALOG') {
+      await requireAccess(ORIGINS.values);
+      return { catalog: await retry(() => MassTrades.values()), insights: fresh(await get(INSIGHTS)), model: modelInfo() };
+    }
     if (message.type === 'PORTFOLIO_LOAD') return load(message);
     if (message.type === 'PORTFOLIO_INSIGHT') return insight(message);
     return keep(message);
@@ -157,9 +189,12 @@ const PortfolioWorker = (() => {
 
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (!TYPES.includes(message?.type)) return;
-    // Only the extension's own portfolio page; web pages and content scripts are refused.
-    if (sender.id !== chrome.runtime.id || String(sender.url || '').split(/[?#]/)[0] !== chrome.runtime.getURL(PAGE)) return;
-    command(message).then(result => respond({ ok: true, ...result }), error => respond({ ok: false, error: error.message, stop: error.stop === true }));
+    // Only the extension's own pages, each limited to its own messages; web pages and content scripts are refused.
+    if (sender.id !== chrome.runtime.id) return;
+    const url = String(sender.url || '').split(/[?#]/)[0];
+    const page = Object.keys(ACCESS).find(path => url === chrome.runtime.getURL(path));
+    if (!page || !ACCESS[page].includes(message.type)) return;
+    command(message).then(result => respond({ ok: true, ...result }), error => respond({ ok: false, error: error.message, stop: error.stop === true, access: error.access === true }));
     return true;
   });
 
