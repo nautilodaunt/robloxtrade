@@ -86,7 +86,7 @@ Automated tests cover the v2 payload, exact and tag matching, value and projecte
 
 - **Trade overlay:** items are matched to Rolimon’s values by ID. Migrated face bundles are matched to their original item by name and use its migrated value. Items Rolimon’s marks as projected get a **Projected** tag on their thumbnail (and a **Projected** line in the trade list). In the trade list, items Rolimon’s does not list are valued at Roblox’s own RAP, which can be pumped; if what you receive includes any of these, a gain is shown in amber with **⚠ Verify** instead of green. Trade IDs read from the page must be numeric.
 - **Demand:** Rolimon’s demand is shown on a 0–5 scale (0 None, 1 Terrible, 2 Low, 3 Normal, 4 High, 5 Amazing). Items with no Rolimon’s value (RAP-only) or no assigned demand count as 0. Each side shows **Avg demand** below its total, and the trade summary shows give → receive average demand.
-- **Item details on hover:** hover an item in a trade for about half a second to open a panel with its value, RAP, best price, demand, trend, sellers, sales per day, a RAP / best-price chart (30 days, 90 days or 1 year), recent Rolimon’s value and demand changes, and the odds of a Rolimon’s value change. Click the panel to pin it; press Esc or click elsewhere to close. History is read from the item’s rolimons.com page and cached for 10 minutes.
+- **Item details on hover:** hover an item in a trade for about half a second to open a panel with its value, RAP, best price (marked **(stale)** when Rolimon’s hasn’t updated it for 7+ days while copies sold well below it), demand, trend, sellers, sales per day, a RAP / best-price chart (30 days, 90 days or 1 year), recent Rolimon’s value and demand changes, and the odds of a Rolimon’s value change. Click the panel to pin it; press Esc or click elsewhere to close. History is read from the item’s rolimons.com page and cached for 10 minutes. Classic faces, which Roblox turned into bundles, are read from their Rolimon’s bundle page (the old face page stopped updating the best price), and the panel’s Rolimon’s link opens that page.
 - **Rolimon’s value change odds:** for valued items, the panel shows the chance that Rolimon’s raises or lowers the value within **7, 14 or 30 days** (toggle 7D / 14D / 30D), next to how often that usually happens and the model’s backtest hit rate. Unvalued (RAP-only) items show “No prediction (unvalued item)”. See [Value change model](#value-change-model).
 - **Auto trade ads:** the panel on Rolimon’s uses a closed shadow root, so page scripts cannot click its buttons. Each post is rebuilt from the saved selections and checked again; invalid saved data pauses posting. A cooldown time supplied by the page is ignored unless it ends within a day.
 - **Ad finder:** trade and profile links are built from the numeric user ID, not read from storage.
@@ -94,13 +94,13 @@ Automated tests cover the v2 payload, exact and tag matching, value and projecte
 
 ## Value change model
 
-The odds come from gradient boosted trees (`src/value-model.js` for features and scoring, `src/value-model-data.js` for the generated trees), run in the service worker. For each horizon there are two models: “value higher after N days” and “value lower after N days”. Inputs are only data from before the prediction time: RAP and best price against value (7/30/90 days), RAP momentum, sellers, favorites, sales prices and volume, time since and size of the last value change, raises and lowers in the past year, Rolimon’s demand, trend, projected and hyped flags, and item age.
+The odds come from gradient boosted trees (`src/value-model.js` for features and scoring, `src/value-model-data.js` for the generated trees), run in the service worker. For each horizon there are two models: “value higher after N days” and “value lower after N days”. Inputs are only data from before the prediction time: RAP and best price against value (7/30/90 days), RAP momentum, sellers, favorites, sales prices and volume, time since and size of the last value change, raises and lowers in the past year, Rolimon’s demand, trend, projected and hyped flags, and item age. Rolimon’s sometimes stops updating an item’s best price for months; a best price unchanged for 7+ days while 2+ copies sold at least 20% below it is treated as unknown instead of as the lowest listing, and each tree split learns which side unknown values belong on. Classic faces became Roblox bundles in 2026; their old Rolimon’s item pages froze, so their data comes from the bundle page, whose history also covers the years before the move (its favorites count restarts at the move and is continued from the old count). Rolimon’s publishes only the lowest listing and the number of sellers, not how many copies are listed at each price, so listing depth is not an input.
 
-Training uses every valued item’s full Rolimon’s history since 2018 as weekly snapshots. It is tested honestly: tuned on data before the last six months, then scored on those months, which it never saw, against two simple rules (RAP vs value, and Rolimon’s own trend tag). The shipped model is then retrained on all data. Results are in `tools/data/model-report.json`.
+Training uses every valued item’s full Rolimon’s history since 2018 as weekly snapshots. It is tested honestly: tuned on data before the last six months, then scored on those months, which it never saw, against two simple rules (RAP vs value, and Rolimon’s own trend tag). The shipped model is then retrained on all data. Results are in `tools/data/model-report.json`. Split thresholds are exported rounded up (to 7 digits), so a value exactly on a split goes the same way as in training.
 
 To retrain (every 1–2 months; a backtest showed the ranking of items barely ages, but the shown percentages drift noticeably after about 3 months). The item panel shows the model’s age (“Model is 3 days old”), measured from the Rolimon’s data it was trained on; it turns yellow at 60 days and red at 90 days.
 
-1. `node tools/collect-rolimons.cjs --refresh` saves each valued item’s rolimons.com page data to `tools/data/` (one request about every 2 seconds; it stops if rate limited repeatedly or shown a verification page). `--refresh` re-downloads items saved more than a day ago (change with `--max-age DAYS`) and refreshes the valued item list. If it stops, run the same command later and it continues where it left off. Without `--refresh` it only downloads items not saved yet.
+1. `node tools/collect-rolimons.cjs --refresh` saves each valued item’s rolimons.com page data to `tools/data/` (one request about every 2 seconds; it stops if rate limited repeatedly or shown a verification page). `--refresh` re-downloads items saved more than a day ago (change with `--max-age DAYS`) and refreshes the valued item list. If it stops, run the same command later and it continues where it left off. Without `--refresh` it only downloads items not saved yet. Classic faces are read from their bundle page; the first time, that takes one extra request per face (the old item page names the bundle), after which the saved bundle ID is used directly.
 2. `node tools/train-value-model.cjs` writes `src/value-model-data.js`, `tools/data/train.log` and `tools/data/model-report.json`. Optional: `--test 2026-05-01 --valid 2025-11-01` to move the test window.
 3. Reload the extension.
 
@@ -170,3 +170,38 @@ The odds cache (6 hours) is shared with the portfolio analyzer, so items either 
 - value, RAP gap, demand, trend, 30-day RAP change, sales per day and sellers
 
 Items without enough recent data get no model odds and rank after scanned items.
+
+## Value forecast
+
+Forecasts where an item’s **Rolimon’s value** may be in 1 month, 3 months, 6 months, 1 year and 2 years, to help decide what to hold. It only reads data and doesn’t need a Roblox sign-in.
+
+1. Reload the extension at `chrome://extensions`.
+2. In the popup, click **Open value forecast ↗**, or click **Value forecast ↗** on a limiteds browser row to open that item directly.
+3. Type an item name, acronym or ID (suggestions cover every valued limited) and click **Forecast**. The page reads the item’s live Rolimon’s page once (paced like the deep scans and cached for 10 minutes).
+
+For each span the page shows:
+
+- **Typical value**: the middle outcome (half end above, half below), with the change from today.
+- **Likely range (80%)**: 8 in 10 outcomes (the top and bottom 10% cut off). **Middle half**: the middle 5 in 10.
+- **Higher · Same · Lower**: the chances the value ends above, at or below today’s.
+- **Based on**: *This item* (its own forecast) or *Any valued item* (the usual range, see below).
+
+The top boxes show 1 month and 1 year. A chart shows the past 2 years of value and weekly RAP with the forecast fan, and **How reliable is this?** lists each span’s backtest results.
+
+**How it works.** For each span there are 10 boosted tree models (`tools/gbm.cjs`, shared with the value change model). Each gives the chance that the value ends at most ×0.5, ×0.75 or ×0.9 of today’s, lower, higher, or at least ×1.1, ×1.25, ×1.5, ×2 or ×3. The chances are made consistent with each other and turned into one distribution, from which the typical value and ranges are read. Beyond ×0.5 and ×3 it uses the average of what happened past those points. Inputs are the value change model’s plus longer history: value change over 3 and 12 months, distance from the 1-year peak, value swings and number of value changes over 2 years, RAP against value over 6 and 12 months, RAP change over 3 and 12 months, 12-month sales price and volume, and 12-month change in sellers and favorites. Training uses a snapshot every 14 days of each valued item’s Rolimon’s history since October 2018 (496 items, 85,599 snapshots). The **usual range** is how much the values of all valued items changed over the same span in the past. For 1 year it is typically ×1.25, likely ×0.77 to ×2.75, with higher 64%, same 13% and lower 23%.
+
+**Backtest.** For each year from 2020 (later for longer spans, whose outcomes take longer to be known), the models were trained only on outcomes known before that year began, then scored on forecasts made during that year. There are two measures. *Skill* is how much better the chances were than the usual range, by ranked probability score (0% = no better, negative = worse). *Range held* is how often the 80% likely range caught the real value (it should be about 80%).
+
+| Span | Years tested | Item model skill | Its likely range held | Usual range held | Page shows |
+| --- | --- | --- | --- | --- | --- |
+| 1 month | 2020–2026 | +8.0% | 82% (worst year 68%) | 80% | item’s own forecast |
+| 3 months | 2020–2026 | −0.4% | 75% | 78% | usual range |
+| 6 months | 2021–2026 | −12% | 70% | 79% | usual range |
+| 1 year | 2021–2025 | −23% | 57% | 77% | usual range |
+| 2 years | 2022–2024 | +0.5% | 62% | 76% | usual range |
+
+A span uses the item’s own forecast only if it beat the usual range overall (skill above 0) and its likely range held at least about as often (at most 2 points less). This rule was set after the first backtest run. The shipped models were then retrained with unchanged settings, and the rule was applied to that run’s results (shown above). Longer spans fail mostly because values swing with the whole market. For forecasts made during 2023 the typical value was unchanged a year later, while for those made during 2025 it nearly doubled. Even the usual 1-year range held for only half of the 2025 forecasts. One item’s history can’t predict those swings.
+
+To retrain, first collect fresh data (step 1 under [Value change model](#value-change-model)), then run `node tools/train-value-forecast.cjs` (about 6 minutes). It writes `src/value-forecast-data.js`, `tools/data/forecast-report.json` and `tools/data/forecast-train.log`. Reload the extension afterwards. The page shows the model’s data date and suggests retraining once it is 90 days old.
+
+Limitations: forecasts are estimates from past value changes, not promises, and Rolimon’s can change any value at any time. The 1-month forecast needs recent daily data; items without it show only the longer spans. The hover panel’s 7/14/30-day odds come from the short-term model and count any raise or lower during those days, while this page shows where the value ends up, so the numbers differ. The page’s calculations, texts and worker messages are covered by automated tests, but **the page has not been opened in Chrome during implementation**.

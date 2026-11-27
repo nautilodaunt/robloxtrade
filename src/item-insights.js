@@ -29,6 +29,18 @@
     try { return JSON.parse(html.slice(start, end)); } catch { return undefined; }
   }
 
+  // Item pages carry item_details_data. Classic faces became Roblox bundles in
+  // 2026: a face's old item page stopped updating its best price and names the
+  // bundle (migrated_to_bundle_id), whose page has bundle_details_data (same
+  // fields) with the live data and the full history from before the move.
+  function detailsOf(html) {
+    const item = extract(html, 'item_details_data');
+    if (item && typeof item === 'object') return { raw: item, bundle: false };
+    const bundle = extract(html, 'bundle_details_data');
+    return bundle && typeof bundle === 'object' ? { raw: bundle, bundle: true } : { raw: {}, bundle: false };
+  }
+  const idOf = v => (Number.isSafeInteger(v) && v > 0 ? String(v) : null);
+
   // Keep a year of history, denser for the last 30 days, small enough to message.
   function thin(points, max) {
     if (points.length <= max) return points;
@@ -41,14 +53,32 @@
   // changes rows: [time, type, from, to]; 1 value, 2 demand, 3 trend,
   // 4 projected, 5 hyped (as Rolimon's value_changes log records them).
   function normalizePage(html, sinceSec = 0) {
+    const { raw: info, bundle } = detailsOf(html);
     const daily = { t: [], rap: [], best: [], sellers: [], fav: [] };
     const h = extract(html, 'history_data');
     if (h && Array.isArray(h.timestamp)) {
+      const fav = h.timestamp.map((_, i) => h.favorited?.[i]);
+      // A face's bundle page switches from the old face's favorites count to
+      // the new bundle's (Playful Vampire: 730K to 1.6K). Continue the old
+      // count so favorites momentum stays comparable. Two readings in a row
+      // must drop below half: one bad reading is not a switch.
+      if (info.migrated_from_asset_id != null) {
+        const ok = v => valid(v) && v > 0;
+        let shift = 0, prev = 0;
+        for (let i = 0; i < fav.length; i++) {
+          if (!ok(fav[i])) continue;
+          let next = i + 1;
+          while (next < fav.length && !ok(fav[next])) next++;
+          if (next < fav.length && fav[i] + shift < prev / 2 && fav[next] + shift < prev / 2) shift = prev - fav[i];
+          fav[i] += shift;
+          prev = fav[i];
+        }
+      }
       let day = null;
       h.timestamp.forEach((t, i) => {
         if (!valid(t) || t < sinceSec) return;
         const d = Math.floor(t / DAY) * DAY;
-        const row = [d, h.rap?.[i], h.best_price?.[i], h.num_sellers?.[i], h.favorited?.[i]].map(v => valid(v) ? v : null);
+        const row = [d, h.rap?.[i], h.best_price?.[i], h.num_sellers?.[i], fav[i]].map(v => valid(v) ? v : null);
         if (d === day) { daily.rap[daily.t.length - 1] = row[1]; daily.best[daily.t.length - 1] = row[2]; daily.sellers[daily.t.length - 1] = row[3]; daily.fav[daily.t.length - 1] = row[4]; return; }
         day = d;
         daily.t.push(d); daily.rap.push(row[1]); daily.best.push(row[2]); daily.sellers.push(row[3]); daily.fav.push(row[4]);
@@ -67,22 +97,25 @@
     const raw = extract(html, 'value_changes');
     const changes = Array.isArray(raw) ? raw.filter(c => Array.isArray(c) && valid(c[0]) && c[1] >= 1 && c[1] <= 5)
       .map(([t, type, from, to]) => [t, type, from ?? null, to ?? null]) : [];
-    const d = extract(html, 'item_details_data') || {};
+    // A bundle page dates `created` to the bundle (2026 for the faces); the
+    // item's first Rolimon's reading can be years older.
+    const created = bundle ? Math.min(...[info.created, info.first_timestamp].filter(valid)) : info.created;
     return {
-      created: valid(d.created) ? d.created : null,
-      value: valid(d.value) ? d.value : null,
-      demand: Number.isInteger(d.demand) ? d.demand : null,
-      trend: Number.isInteger(d.trend) ? d.trend : null,
-      projected: d.projected === 1 || d.projected === true,
-      hyped: d.hyped === 1 || d.hyped === true,
+      created: valid(created) ? created : null,
+      value: valid(info.value) ? info.value : null,
+      demand: Number.isInteger(info.demand) ? info.demand : null,
+      trend: Number.isInteger(info.trend) ? info.trend : null,
+      projected: info.projected === 1 || info.projected === true,
+      hyped: info.hyped === 1 || info.hyped === true,
+      bundleId: bundle ? idOf(info.bundle_id) : idOf(info.migrated_to_bundle_id),
       daily, sales, changes
     };
   }
 
   function parseItemPage(html) {
-    const raw = extract(html, 'item_details_data') || {};
+    const { raw, bundle } = detailsOf(html);
     const details = {
-      name: typeof raw.item_name === 'string' ? raw.item_name : null,
+      name: typeof raw.item_name === 'string' ? raw.item_name : typeof raw.bundle_name === 'string' ? raw.bundle_name : null,
       value: valid(raw.value) ? raw.value : null,
       rap: valid(raw.rap) ? raw.rap : null,
       bestPrice: valid(raw.best_price) && raw.best_price > 0 ? raw.best_price : null,
@@ -93,7 +126,9 @@
       rare: raw.rare === 1 || raw.rare === true,
       sellers: valid(raw.num_sellers) ? raw.num_sellers : null,
       owners: valid(raw.owners) ? raw.owners : null,
-      copies: valid(raw.copies) ? raw.copies : null
+      copies: valid(raw.copies) ? raw.copies : null,
+      // Rolimon's bundle page of a face that became a Roblox bundle.
+      bundleId: bundle ? idOf(raw.bundle_id) : idOf(raw.migrated_to_bundle_id)
     };
     const h = extract(html, 'history_data');
     let history = [];

@@ -545,9 +545,10 @@
     insightPanel.style.left = `${left}px`;
     insightPanel.style.top = `${Math.max(8, Math.min(innerHeight - h - 8, r.top))}px`;
   }
-  function stat(grid, label, value, cls = '') {
+  function stat(grid, label, value, cls = '', title = '') {
     if (value == null || value === '') return;
     const cell = el('div', 'rta-insight-stat');
+    if (title) cell.title = title;
     cell.append(el('span', 'rta-insight-label', label), el('span', `rta-insight-value ${cls}`.trim(), value));
     grid.append(cell);
   }
@@ -561,7 +562,10 @@
     if (flags.childElementCount) grid.append(flags);
     stat(grid, 'Value', d.value != null ? number(d.value) : 'None');
     stat(grid, 'RAP', d.rap != null ? number(d.rap) : null);
-    stat(grid, 'Best price', d.bestPrice != null ? number(d.bestPrice) : null);
+    if (d.bestPriceStale && d.bestPrice != null) {
+      stat(grid, 'Best price', `${number(d.bestPrice)} (stale)`, 'rta-stale',
+        'Rolimon’s hasn’t updated this lowest price in 7+ days while copies sold well below it. The value odds ignore it; check the real listings on Roblox.');
+    } else stat(grid, 'Best price', d.bestPrice != null ? number(d.bestPrice) : null);
     const score = TradeValues.demandScore(d);
     stat(grid, 'Demand', `${score} / 5 · ${TradeValues.DEMAND_SCALE[score]}`, `rta-demand-${score}`);
     stat(grid, 'Trend', d.trend != null ? TradeValues.TREND_LABELS[d.trend] : 'None');
@@ -764,6 +768,8 @@
     placeInsight();
     requestInsight(id).then(insight => {
       if (insightPanel !== panel) return;
+      // Faces became Roblox bundles; Rolimon's main page for one is the bundle page.
+      if (/^\d{1,20}$/.test(insight.details?.bundleId || '')) link.href = `https://www.rolimons.com/bundle/${insight.details.bundleId}`;
       fillStats(stats, item, insight);
       fillBody(body, insight, item);
       placeInsight();

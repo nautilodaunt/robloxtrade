@@ -17,7 +17,7 @@ const PAGE = { id: 'test', url: 'chrome-extension://test/src/portfolio.html?user
 
 function setup() {
   let now = NOW;
-  const handlers = [], session = {}, local = {}, calls = [], insightCalls = [];
+  const handlers = [], session = {}, local = {}, calls = [], insightCalls = [], seriesCalls = [];
   const state = { rateLimit: false };
   const area = store => ({ get: async key => ({ [key]: structuredClone(store[key]) }), set: async data => { Object.assign(store, structuredClone(data)); } });
   const json = (data, status = 200) => ({ ok: status < 400, status, headers: { get: () => null }, json: async () => data });
@@ -52,6 +52,13 @@ function setup() {
         prediction: { horizons: { 7: { up: 0.02, down: 0.3, baseUp: 0.03, baseDown: 0.08, test: {} }, 14: { up: 0.03, down: 0.4, baseUp: 0.05, baseDown: 0.1 },
           30: { up: 0.04, down: 0.5, baseUp: 0.09, baseDown: 0.17 } }, trainedAt: '2026-11-01', dataAt: '2026-11-01', testPeriod: 'x' } };
     },
+    // Stands in for background.js's history reader for the value forecast page.
+    getSeries: async id => {
+      seriesCalls.push(id);
+      if (state.rateLimit) throw new Error("Rolimon's item page failed (429)");
+      return { details: { name: CATALOG[id]?.[0] ?? null, value: CATALOG[id]?.[3] ?? null },
+        series: { value: 60000, daily: { t: [NOW / 1000 - 86400], rap: [55000] }, sales: { t: [], price: [], volume: [] }, changes: [[NOW / 1000 - 9e6, 1, 50000, 60000]] } };
+    },
     VALUE_MODEL: { trainedAt: '2026-11-02T00:00:00Z', dataAt: '2026-11-01T00:00:00Z' },
     chrome: {
       storage: { session: area(session), local: area(local) },
@@ -68,7 +75,7 @@ function setup() {
   }
   const dispatch = (message, sender, respond) => handlers.map(fn => fn(message, sender, respond)).find(r => r === true);
   return {
-    state, session, local, calls, insightCalls,
+    state, session, local, calls, insightCalls, seriesCalls,
     command: (type, extra = {}) => new Promise(resolve => dispatch({ type, ...extra }, PAGE, r => resolve(JSON.parse(JSON.stringify(r))))),
     from: (sender, type, extra = {}) => new Promise((resolve, reject) => {
       const handled = dispatch({ type, ...extra }, sender, r => resolve(JSON.parse(JSON.stringify(r))));
@@ -188,4 +195,37 @@ test('the limiteds browser gets values and odds without sign-in, and nothing els
   assert.equal(await app.from(browser, 'PORTFOLIO_KEEP', { instanceIds: ['copy-0001-aaaa'], keep: true }), undefined);
   assert.equal(await app.from({ id: 'test', url: 'https://www.rolimons.com/' }, 'LIMITEDS_CATALOG'), undefined);
   assert.equal(await app.from({ id: 'other', url: 'chrome-extension://test/src/limiteds.html' }, 'LIMITEDS_CATALOG'), undefined);
+});
+
+test('the value forecast page reads item histories and the value list, and nothing else', async () => {
+  const app = setup();
+  const page = { id: 'test', url: 'chrome-extension://test/src/forecast.html?id=2' };
+  const r = await app.from(page, 'FORECAST_SERIES', { assetId: 2 });
+  assert.equal(r.ok, true, r.error);
+  assert.deepEqual([r.assetId, r.details.name, r.details.value, r.series.value], [2, 'Mid Hat', 60000, 60000]);
+  assert.deepEqual(r.series.changes, [[NOW / 1000 - 9e6, 1, 50000, 60000]]);
+  assert.deepEqual(app.seriesCalls, [2]);
+  assert.equal(app.calls.length, 0, 'no Roblox or Rolimon’s API calls');
+  const list = await app.from(page, 'LIMITEDS_CATALOG');
+  assert.equal(list.catalog[1].name, 'Big Hat');
+  for (const assetId of ['2', -1, 1.5, undefined]) {
+    const bad = await app.from(page, 'FORECAST_SERIES', { assetId });
+    assert.equal(bad.ok, false);
+    assert.match(bad.error, /Invalid item ID/);
+  }
+  // A rate limit tells the page to stop.
+  app.state.rateLimit = true;
+  app.advance(5000);
+  const limited = await app.from(page, 'FORECAST_SERIES', { assetId: 3 });
+  assert.deepEqual([limited.ok, limited.stop], [false, true]);
+  assert.match(limited.error, /429/);
+  assert.deepEqual(app.seriesCalls, [2, 3]);
+  // Only the forecast page may ask, and it can't use the portfolio messages.
+  assert.equal(await app.from({ id: 'test', url: 'chrome-extension://test/src/limiteds.html' }, 'FORECAST_SERIES', { assetId: 2 }), undefined);
+  assert.equal(await app.from({ id: 'test', url: 'https://www.rolimons.com/' }, 'FORECAST_SERIES', { assetId: 2 }), undefined);
+  assert.equal(await app.from({ id: 'other', url: 'chrome-extension://test/src/forecast.html' }, 'FORECAST_SERIES', { assetId: 2 }), undefined);
+  for (const type of ['PORTFOLIO_STATUS', 'PORTFOLIO_LOAD', 'PORTFOLIO_INSIGHT', 'PORTFOLIO_KEEP']) {
+    assert.equal(await app.from(page, type, { assetId: 2, target: '42', instanceIds: ['copy-0001-aaaa'], keep: true }), undefined, type);
+  }
+  assert.deepEqual(app.seriesCalls, [2, 3]);
 });

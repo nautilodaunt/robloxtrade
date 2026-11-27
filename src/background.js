@@ -11,23 +11,51 @@ let retryAfter = 0;
 let lastError = null;
 
 // Item history for the hover panel, read from the item's Rolimon's page.
+// Classic faces are Roblox bundles now: their old item page stopped updating
+// the best price and names the bundle page, which has the live data and the
+// full history. A face is read from there (remembered for next time).
 const insights = new Map();
+const bundlePages = new Map();
+async function readPage(path) {
+  const response = await fetch(`https://www.rolimons.com/${path}`, { credentials: "omit", signal: AbortSignal.timeout(20000) });
+  if (!response.ok) throw new Error(`Rolimon's ${path.split("/")[0]} page failed (${response.status})`);
+  const html = await response.text();
+  return { html, result: ItemInsights.parseItemPage(html) };
+}
+// The item's live Rolimon's page: the bundle page for a classic face.
+async function loadItemPage(id) {
+  id = String(id);
+  if (chrome.permissions && !await chrome.permissions.contains({ origins: ['https://www.rolimons.com/*'] })) {
+    throw new Error("Chrome has not granted rolimons.com access.");
+  }
+  const known = bundlePages.get(id);
+  let page = known ? await readPage(`bundle/${known}`).catch(() => null) : null;
+  if (!page) {
+    page = await readPage(`item/${id}`);
+    const bundleId = page.result.details.bundleId;
+    if (bundleId) {
+      bundlePages.set(id, bundleId);
+      if (bundleId !== known) {
+        try { page = await readPage(`bundle/${bundleId}`); } catch { /* keep the old item page */ }
+      }
+    }
+  }
+  return page;
+}
 function getInsight(id) {
   const hit = insights.get(id);
   if (hit && Date.now() < hit.expires) return hit.promise;
   const promise = (async () => {
-    if (chrome.permissions && !await chrome.permissions.contains({ origins: ['https://www.rolimons.com/*'] })) {
-      throw new Error("Chrome has not granted rolimons.com access.");
-    }
-    const response = await fetch(`https://www.rolimons.com/item/${id}`, { credentials: "omit", signal: AbortSignal.timeout(20000) });
-    if (!response.ok) throw new Error(`Rolimon's item page failed (${response.status})`);
-    const html = await response.text();
-    const result = ItemInsights.parseItemPage(html);
+    const { html, result } = await loadItemPage(id);
     result.prediction = null;
-    // Value change odds, for valued items only (RAP-only items get none).
-    if (result.details.value > 0 && globalThis.ValueModel) {
+    if (globalThis.ValueModel) {
       try {
-        result.prediction = ValueModel.predict(ItemInsights.normalizePage(html, Date.now() / 1000 - 120 * 86400));
+        const series = ItemInsights.normalizePage(html, Date.now() / 1000 - 120 * 86400);
+        // Best price Rolimon's seems to have stopped updating (the odds ignore it).
+        const last = series.daily.t.length - 1;
+        result.details.bestPriceStale = result.details.bestPrice != null && result.details.bestPrice === series.daily.best[last] && ValueModel.staleBest(series, last);
+        // Value change odds, for valued items only (RAP-only items get none).
+        if (result.details.value > 0) result.prediction = ValueModel.predict(series);
       } catch { /* the chart still works without a prediction */ }
     }
     return result;
@@ -35,6 +63,24 @@ function getInsight(id) {
   insights.set(id, { promise, expires: Date.now() + 10 * 60 * 1000 });
   promise.catch(() => { if (insights.get(id)?.promise === promise) insights.get(id).expires = Date.now() + RETRY_MS; });
   if (insights.size > 60) insights.delete(insights.keys().next().value);
+  return promise;
+}
+
+// Three years of an item's Rolimon's history (the full value change log is
+// always included) for the value forecast page, which runs the forecast
+// itself. Cached 10 minutes; failures are not cached.
+const seriesCache = new Map();
+function getSeries(id) {
+  id = String(id);
+  const hit = seriesCache.get(id);
+  if (hit && Date.now() < hit.expires) return hit.promise;
+  const promise = loadItemPage(id).then(({ html, result }) => ({
+    details: result.details,
+    series: ItemInsights.normalizePage(html, Date.now() / 1000 - 3 * 365 * 86400)
+  }));
+  seriesCache.set(id, { promise, expires: Date.now() + 10 * 60 * 1000 });
+  promise.catch(() => { if (seriesCache.get(id)?.promise === promise) seriesCache.delete(id); });
+  if (seriesCache.size > 10) seriesCache.delete(seriesCache.keys().next().value);
   return promise;
 }
 

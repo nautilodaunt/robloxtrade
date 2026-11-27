@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Value forecast · Trade Assistant</title>
+<style>
+body{font:14px system-ui,sans-serif;margin:0;color:#202124;background:#f6f8fa}
+main{max-width:1150px;margin:0 auto;padding:20px}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:15px;margin:0 0 10px}
+.lead{margin:0 0 16px;color:#57606a;max-width:860px}
+.layout{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+.panel{background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:14px;position:sticky;top:12px}
+label{display:block;margin:0 0 4px;font-weight:500}
+input{box-sizing:border-box;width:100%;padding:7px}
+small{display:block;color:#57606a;line-height:1.45;margin-top:8px}
+button{padding:8px 12px;cursor:pointer}
+button:disabled{cursor:not-allowed}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+#status{white-space:pre-wrap;font-weight:600;margin:0 0 12px}
+#status:empty{display:none}
+.card{background:#fff;border:1px solid #d0d7de;border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.name{font-size:18px;font-weight:600;color:#0969da;text-decoration:none}
+.name:hover{text-decoration:underline}
+.badge{background:#eaeef2;color:#24292f;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px}
+.badge.warn{background:#fff1e5;color:#bc4c00}
+.meta{font-size:13px;color:#30363d;margin-top:4px}
+.headlines{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:12px}
+.headline{border:1px solid #eaeef2;border-radius:8px;padding:10px 12px;background:#fbfcfd;line-height:1.5}
+.headline .when{font-size:12px;font-weight:600;color:#57606a;text-transform:uppercase;letter-spacing:.03em}
+.headline .big{font-size:22px;font-weight:700}
+.headline .big span{font-size:15px;font-weight:600}
+.headline .src{font-size:12px;color:#57606a;margin-top:4px}
+.up{color:#1a7f37}.down{color:#cf222e}.flat{color:#57606a}
+#chart svg{width:100%;height:auto;display:block}
+#chart .grid{stroke:#eaeef2;stroke-width:1}
+#chart .today{stroke:#8c959f;stroke-width:1;stroke-dasharray:4 4}
+#chart .tick{font-size:11px;fill:#57606a}
+#chart .band80{fill:#0969da;fill-opacity:.12}
+#chart .band50{fill:#0969da;fill-opacity:.2}
+#chart .median{fill:none;stroke:#0969da;stroke-width:2;stroke-dasharray:7 4}
+#chart .past{fill:none;stroke:#24292f;stroke-width:2}
+#chart .rap{fill:none;stroke:#bc4c00;stroke-width:1.2;stroke-opacity:.75}
+#chart .dot{fill:#0969da;stroke:#fff;stroke-width:1.5}
+#chart .dot.usual{fill:#fff;stroke:#0969da;stroke-width:2}
+#chart .dot.now{fill:#24292f}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#57606a;margin-top:8px;align-items:center}
+.sw{display:inline-block;width:18px;height:0;border-top:2px solid;margin-right:5px;vertical-align:middle}
+.sw.past{border-color:#24292f}.sw.rap{border-color:#bc4c00}.sw.median{border-top-style:dashed;border-color:#0969da}
+.sw.box{height:9px;border:0;border-radius:2px}
+.sw.b50{background:rgba(9,105,218,.32)}.sw.b80{background:rgba(9,105,218,.12)}
+.dotkey{display:inline-block;width:8px;height:8px;border-radius:50%;border:2px solid #0969da;margin-right:4px;vertical-align:middle}
+.dotkey.model{background:#0969da}.dotkey.usual{background:#fff}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid #eaeef2;vertical-align:top}
+th{color:#57606a;font-weight:600;font-size:12px;white-space:nowrap}
+td .sub{font-size:12px;color:#57606a;margin-top:2px}
+.nowrap{white-space:nowrap}
+.bar{display:flex;height:7px;border-radius:4px;overflow:hidden;background:#eaeef2;margin-top:5px;min-width:130px}
+.bar span{display:block;height:100%}
+.bar .u{background:#2da44e}.bar .s{background:#afb8c1}.bar .d{background:#cf222e}
+.reliability{margin:0;padding-left:18px;line-height:1.55}
+.reliability li{margin-bottom:6px}
+.note{font-size:12px;color:#57606a;line-height:1.5;margin:8px 0 0}
+@media (max-width:860px){.layout{grid-template-columns:1fr}.panel{position:static}}
+</style></head>
+<body><main>
+<h1>Value forecast</h1>
+<p class="lead">Where an item’s <strong>Rolimon’s value</strong> may be in 1 month to 2 years, to help decide what to hold: a typical value, a likely range and the chances it ends higher, the same or lower, with how well each forecast did on past years. Each forecast reads the item’s live Rolimon’s page (a second or two).</p>
+<div class="layout">
+<section class="panel" aria-label="Pick an item">
+  <form id="pick">
+    <label for="item">Item name, acronym or ID</label>
+    <input id="item" type="search" list="items" placeholder="e.g. Playful Vampire, PV or 2409285794" autocomplete="off" required>
+    <datalist id="items"></datalist>
+    <div class="actions"><button id="go" type="submit">Forecast</button></div>
+  </form>
+  <small id="catalog-note">Loading the Rolimon’s item list…</small>
+  <small><b>Typical value</b>: the middle outcome (half end above, half below). <b>Likely range</b>: 8 in 10 outcomes (top and bottom 10% cut off). <b>Middle half</b>: the middle 5 in 10.</small>
+  <small id="model-note"></small>
+</section>
+<section aria-label="Forecast">
+  <p id="status" role="status" aria-live="polite">Pick an item to forecast its Rolimon’s value.</p>
+  <div id="result" hidden>
+    <article class="card" id="head" aria-label="Item and summary"></article>
+    <article class="card">
+      <h2>Value over the past 2 years and the forecast</h2>
+      <div id="chart"></div>
+      <div class="legend">
+        <span><span class="sw past"></span>Rolimon’s value</span>
+        <span><span class="sw rap"></span>RAP (weekly)</span>
+        <span><span class="sw median"></span>Typical value</span>
+        <span><span class="sw box b50"></span>Middle half</span>
+        <span><span class="sw box b80"></span>Likely range (80%)</span>
+        <span><span class="dotkey model"></span>this item’s forecast</span>
+        <span><span class="dotkey usual"></span>usual for any item</span>
+      </div>
+    </article>
+    <article class="card">
+      <h2>Forecast by time</h2>
+      <div class="table-wrap" id="table"></div>
+    </article>
+    <article class="card">
+      <h2>How reliable is this?</h2>
+      <div id="reliability"></div>
+    </article>
+  </div>
+  <small>Forecasts are estimates from past Rolimon’s value changes, not promises. Market-wide booms and slumps move almost every item at once and can’t be predicted from one item’s history, and Rolimon’s can change any value at any time.</small>
+</section>
+</div>
+</main>
+<script src="value-model.js"></script><script src="value-forecast.js"></script><script src="value-forecast-data.js"></script><script src="forecast-view.js"></script><script src="forecast.js"></script></body></html>

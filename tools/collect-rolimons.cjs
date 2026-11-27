@@ -8,6 +8,8 @@
    and refreshes the valued item list, so retraining needs no manual delete.
    A stopped refresh resumes where it left off when run again.
 
+   Classic faces (Roblox bundles since 2026) are read from their bundle page.
+
    Usage: node tools/collect-rolimons.cjs [--refresh] [--max-age DAYS]
           [--limit N] [--delay MS]                                          */
 const fs = require('node:fs');
@@ -51,6 +53,41 @@ async function get(url) {
   }
 }
 
+async function fetchPage(url) {
+  const response = await get(url);
+  if (!response.ok) return { status: response.status, html: null };
+  const html = await response.text();
+  if (/cf-chl|challenge-platform|Just a moment|captcha/i.test(html) && !/\b(item|bundle)_details_data\b/.test(html)) {
+    throw new Stop('Rolimon’s returned a verification page. Stopping; do not bypass it.');
+  }
+  return { status: response.status, html };
+}
+
+// One item's history. Classic faces became Roblox bundles in 2026: a face's
+// old item page stopped updating (best price, favorites) and names the bundle
+// page, which has the live data and the full history from before the move.
+// The bundle ID is saved with the item, so a refresh fetches only that page.
+async function fetchSeries(item, savedBundle, delay = DELAY) {
+  const hasData = s => s && (s.daily.t.length || s.changes.length);
+  if (savedBundle) {
+    const page = await fetchPage(`https://www.rolimons.com/bundle/${savedBundle}`);
+    const series = page.html && normalizePage(page.html, SINCE);
+    if (hasData(series)) return { series };
+    await sleep(delay);
+  }
+  const page = await fetchPage(`https://www.rolimons.com/item/${item.id}`);
+  if (!page.html) return { error: page.status === 404 ? '404' : `HTTP ${page.status}` };
+  let series = normalizePage(page.html, SINCE);
+  if (series.bundleId && series.bundleId !== savedBundle) {
+    await sleep(delay);
+    const bundle = await fetchPage(`https://www.rolimons.com/bundle/${series.bundleId}`);
+    const moved = bundle.html && normalizePage(bundle.html, SINCE);
+    if (hasData(moved)) series = moved;
+    else log(`bundle ${series.bundleId} unavailable (HTTP ${bundle.status}); kept the item page of ${item.id}`);
+  }
+  return hasData(series) ? { series } : { error: 'no data' };
+}
+
 // What to fetch: items never saved first, then (with refresh) items saved more
 // than maxAgeDays ago, oldest first. savedAt maps item id -> save time (ms).
 function pickTodo(list, savedAt, { refresh = false, maxAgeDays = 1, limit = Infinity, now = Date.now() } = {}) {
@@ -90,18 +127,14 @@ async function main() {
   for (const item of todo) {
     const started = Date.now();
     try {
-      const response = await get(`https://www.rolimons.com/item/${item.id}`);
-      if (response.status === 404) { failed++; log(`404 ${item.id} ${item.name}`); continue; }
-      if (!response.ok) { failed++; log(`HTTP ${response.status} ${item.id}`); continue; }
-      const html = await response.text();
-      if (/cf-chl|challenge-platform|Just a moment|captcha/i.test(html) && !html.includes('item_details_data')) {
-        throw new Stop('Rolimon’s returned a verification page. Stopping; do not bypass it.');
-      }
-      const series = normalizePage(html, SINCE);
-      if (!series.daily.t.length && !series.changes.length) { failed++; log(`no data ${item.id} ${item.name}`); continue; }
+      const file = path.join(ITEMS, `${item.id}.json`);
+      let savedBundle = null;
+      try { savedBundle = JSON.parse(fs.readFileSync(file, 'utf8')).bundleId ?? null; } catch { /* not saved yet */ }
+      if (!/^\d{1,20}$/.test(savedBundle || '')) savedBundle = null;
+      const { series, error } = await fetchSeries(item, savedBundle);
+      if (error) { failed++; log(`${error} ${item.id} ${item.name}`); continue; }
       // Write to a temp file first so a crash never leaves a half-written item
       // (on refresh, the old file stays until the new one is complete).
-      const file = path.join(ITEMS, `${item.id}.json`);
       fs.writeFileSync(file + '.tmp', JSON.stringify({ id: item.id, name: item.name, fetchedAt: Math.floor(Date.now() / 1000), ...series }));
       fs.renameSync(file + '.tmp', file);
       done++;
@@ -116,4 +149,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(error => { log(`FATAL ${error.stack}`); process.exitCode = 1; });
-module.exports = { pickTodo };
+module.exports = { pickTodo, fetchSeries };

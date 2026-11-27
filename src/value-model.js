@@ -38,6 +38,29 @@
   }
   const num = v => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
+  // Rolimon's sometimes stops updating an item's best price (lowest listing):
+  // it can sit unchanged for months while copies keep selling well below it.
+  // The best price of daily row i counts as stale when it has not changed for
+  // 7 full days and 2+ copies sold that week at a daily average price 20%+
+  // below it (a sale means a cheaper listing existed). Uses only row i and
+  // earlier.
+  function staleBest(s, i) {
+    const d = s.daily, b = d.best[i];
+    if (!(b > 0)) return false;
+    let week = false;
+    for (let j = i - 1; j >= 0 && d.t[j] >= d.t[i] - 7 * DAY; j--) {
+      if (d.best[j] !== b) return false;
+      if (d.t[j] === d.t[i] - 7 * DAY) week = true;
+    }
+    if (!week) return false;
+    const sales = s.sales;
+    let below = 0;
+    for (let k = before(sales.t, d.t[i] + 1); k >= 0 && sales.t[k] > d.t[i] - 7 * DAY; k--) {
+      if (sales.price[k] > 0 && sales.price[k] < 0.8 * b) below += sales.volume[k] || 0;
+    }
+    return below >= 2;
+  }
+
   // Features for a snapshot at time t, using only data from before t.
   // Daily rows are day starts, so a day counts once it has fully ended.
   function features(s, t) {
@@ -59,7 +82,10 @@
     const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
     const rap = d.rap[last];
     const rap30 = window(d.rap, 30);
-    const best7 = window(d.best, 7);
+    // A stale best price is unknown, and so are the 7 days before it (the
+    // same frozen reading).
+    const bestStale = staleBest(s, last);
+    const best7 = bestStale ? [] : window(d.best, 7);
     const sales = s.sales;
     const saleWindow = days => {
       let vol = 0, sum = 0;
@@ -88,7 +114,7 @@
       rapMom30: ratio(rap, ago(d.rap, 30)),
       rapAbove30: rap30.length ? rap30.filter(x => x > value * 1.1).length / rap30.length : NaN,
       rapBelow30: rap30.length ? rap30.filter(x => x < value * 0.9).length / rap30.length : NaN,
-      bestRatio: clip(ratio(d.best[last], value), -3, 3),
+      bestRatio: bestStale ? NaN : clip(ratio(d.best[last], value), -3, 3),
       bestMin7: clip(ratio(best7.length ? Math.min(...best7) : NaN, value), -3, 3),
       sellers: d.sellers[last] != null ? Math.log1p(d.sellers[last]) : NaN,
       sellersMom30: d.sellers[last] != null && ago(d.sellers, 30) != null ? Math.log((d.sellers[last] + 1) / (ago(d.sellers, 30) + 1)) : NaN,
@@ -122,15 +148,16 @@
     return b > a ? 1 : b < a ? -1 : 0;
   }
 
-  // Trees: node [feature, threshold, left, right] (left when x <= threshold or
-  // missing) or leaf [score].
+  // Trees: node [feature, threshold, left, right] or leaf [score]. x <= threshold
+  // goes left. A missing x goes left, or right when the node has a fifth
+  // entry 1 (training picks the side that fits missing values best).
   function scoreTrees(trees, x) {
     let sum = 0;
     for (const tree of trees) {
       let node = tree[0];
-      while (node.length === 4) {
+      while (node.length >= 4) {
         const v = x[node[0]];
-        node = tree[Number.isNaN(v) || v <= node[1] ? node[2] : node[3]];
+        node = tree[(Number.isNaN(v) ? node[4] !== 1 : v <= node[1]) ? node[2] : node[3]];
       }
       sum += node[0];
     }
@@ -159,6 +186,6 @@
     return { horizons: out, trainedAt: model.trainedAt, dataAt: model.dataAt || model.trainedAt, testPeriod: model.testPeriod };
   }
 
-  root.ValueModel = { DAY, HORIZONS, FEATURES, features, label, stateAt, scoreTrees, predict };
+  root.ValueModel = { DAY, HORIZONS, FEATURES, features, label, stateAt, staleBest, scoreTrees, predict };
   if (typeof module !== 'undefined') module.exports = root.ValueModel;
 })(globalThis);

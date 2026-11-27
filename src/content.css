@@ -125,6 +125,7 @@
 .rta-insight-stat { display: flex; flex-direction: column; min-width: 0; }
 .rta-insight-label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; opacity: .6; }
 .rta-insight-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rta-insight-value.rta-stale { color: #d4b106; }
 .rta-insight-flags { grid-column: 1 / -1; display: flex; gap: 5px; }
 .rta-flag { padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 700; color: #1a1a1a; }
 .rta-flag-projected { background: #e0a100; }

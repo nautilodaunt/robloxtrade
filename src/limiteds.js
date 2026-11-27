@@ -95,6 +95,7 @@ function row(r, n) {
     tools.append(b);
   }
   tools.append(link('Rolimon’s ↗', `https://www.rolimons.com/item/${r.assetId}`), link('Roblox catalog ↗', `https://www.roblox.com/catalog/${r.assetId}`));
+  if (r.value > 0) tools.append(link('Value forecast ↗', chrome.runtime.getURL(`src/forecast.html?id=${r.assetId}`)));
   box.append(tools);
   return box;
 }

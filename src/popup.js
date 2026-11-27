@@ -56,4 +56,5 @@ document.getElementById('ad-stop').addEventListener('click', () => updateAds('ST
 document.getElementById('open-deals').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/deals.html') }));
 document.getElementById('open-portfolio').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/portfolio.html') }));
 document.getElementById('open-limiteds').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/limiteds.html') }));
+document.getElementById('open-forecast').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/forecast.html') }));
 updateAds();

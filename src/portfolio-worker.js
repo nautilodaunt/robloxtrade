@@ -3,10 +3,11 @@
 // only when the page asks), and syncs "never offer" with the deal finder for your own items.
 const PortfolioWorker = (() => {
   const USERS = 'https://users.roblox.com';
-  // Which extension page may send which message. The limiteds browser only reads values and odds.
+  // Which extension page may send which message. The limiteds browser and the value forecast only read.
   const ACCESS = {
     'src/portfolio.html': ['PORTFOLIO_STATUS', 'PORTFOLIO_LOAD', 'PORTFOLIO_INSIGHT', 'PORTFOLIO_KEEP'],
-    'src/limiteds.html': ['LIMITEDS_CATALOG', 'PORTFOLIO_INSIGHT']
+    'src/limiteds.html': ['LIMITEDS_CATALOG', 'PORTFOLIO_INSIGHT'],
+    'src/forecast.html': ['LIMITEDS_CATALOG', 'FORECAST_SERIES']
   };
   const TYPES = [...new Set(Object.values(ACCESS).flat())];
   const INSIGHTS = 'portfolioInsights', HISTORY = 'portfolioHistory', RECENT = 'portfolioRecent';
@@ -166,6 +167,14 @@ const PortfolioWorker = (() => {
     return { assetId: id, insight: summary, cached: false };
   }
 
+  // An item's history for the value forecast page (which runs the forecast): one paced page.
+  async function series(message) {
+    const id = message.assetId;
+    if (!validId(id)) throw fail('Invalid item ID.');
+    try { return { assetId: id, ...(await paced(() => getSeries(id))) }; }
+    catch (error) { throw fail(error.message, /\((429|403)\)|not granted/.test(error.message)); }
+  }
+
   async function keep(message) {
     const ids = message.instanceIds;
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_KEEP || !ids.every(validInstance) || typeof message.keep !== 'boolean') {
@@ -184,6 +193,7 @@ const PortfolioWorker = (() => {
     }
     if (message.type === 'PORTFOLIO_LOAD') return load(message);
     if (message.type === 'PORTFOLIO_INSIGHT') return insight(message);
+    if (message.type === 'FORECAST_SERIES') return series(message);
     return keep(message);
   }
 

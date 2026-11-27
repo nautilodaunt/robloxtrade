@@ -63,12 +63,41 @@ test('unvalued items and stale data get no features or prediction', () => {
   assert.equal(VM.predict(series(), null, T0 + 100 * DAY), null);
 });
 
-test('trees go left on missing values and predictions are probabilities', () => {
+test('a best price Rolimon\'s stopped updating counts as unknown', () => {
+  const at = name => VM.FEATURES.indexOf(name);
+  const s = series();
+  // Stuck at 2500 from day 90 while 2 copies a day sold for 1000 on days 100-119.
+  for (let i = 90; i < 200; i++) s.daily.best[i] = 2500;
+  s.sales = { t: [], price: [], volume: [] };
+  for (let i = 100; i < 120; i++) { s.sales.t.push(T0 + i * DAY); s.sales.price.push(1000); s.sales.volume.push(2); }
+  assert.equal(VM.staleBest(s, 119), true);
+  const t = T0 + 120 * DAY + 3600;
+  const x = VM.features(s, t);
+  assert.ok(Number.isNaN(x[at('bestRatio')]) && Number.isNaN(x[at('bestMin7')]));
+  assert.deepEqual(x.map(String), VM.features(cut(s, t), t).map(String));
+  // Not stale: no sales below it, a moving best price, or stuck under 7 days.
+  assert.equal(VM.staleBest({ ...s, sales: { t: [], price: [], volume: [] } }, 119), false);
+  assert.equal(VM.staleBest({ ...s, sales: { t: [T0 + 119 * DAY], price: [1000], volume: [1] } }, 119), false);
+  assert.equal(VM.staleBest(series(), 119), false);
+  const recent = series();
+  for (let i = 113; i < 200; i++) recent.daily.best[i] = 2500;
+  recent.sales = s.sales;
+  assert.equal(VM.staleBest(recent, 119), false);
+  assert.ok(Number.isFinite(VM.features(recent, t)[at('bestRatio')]));
+  assert.ok(Number.isFinite(VM.features(series(), t)[at('bestMin7')]));
+  assert.equal(VM.staleBest(series(), -1), false);
+});
+
+test('trees send missing values the learned way and predictions are probabilities', () => {
   const tree = [[0, 5, 1, 2], [-1], [1]];
   assert.equal(VM.scoreTrees([tree], [3]), -1);
   assert.equal(VM.scoreTrees([tree], [5]), -1);
   assert.equal(VM.scoreTrees([tree], [NaN]), -1);
   assert.equal(VM.scoreTrees([tree, tree], [6]), 2);
+  const missingRight = [[0, 5, 1, 2, 1], [-1], [1]];
+  assert.equal(VM.scoreTrees([missingRight], [NaN]), 1);
+  assert.equal(VM.scoreTrees([missingRight], [5]), -1);
+  assert.equal(VM.scoreTrees([missingRight], [6]), 1);
   const model = {
     trainedAt: '2026-01-01', testPeriod: ['2025-06-01', '2026-01-01'],
     horizons: { 7: { up: { bias: 0, trees: [], baseRate: 0.1 }, down: { bias: Math.log(1 / 3), trees: [], baseRate: 0.05 }, test: { up: {} } } }
@@ -94,7 +123,7 @@ test('the shipped model has valid trees for every horizon', { skip: !fs.existsSy
       for (const tree of m.trees) {
         for (const node of tree) {
           if (node.length === 1) { assert.ok(Number.isFinite(node[0])); continue; }
-          assert.equal(node.length, 4);
+          assert.ok(node.length === 4 || (node.length === 5 && node[4] === 1));
           assert.ok(node[0] >= 0 && node[0] < VM.FEATURES.length && Number.isFinite(node[1]));
           assert.ok(tree[node[2]] && tree[node[3]]);
         }

@@ -54,6 +54,43 @@ test('normalizes a page into daily rows and the full change log for the value mo
   assert.equal(s.changes.filter(c => c[1] === 1).length, 2);
 });
 
+test('reads a face from its bundle page, and the old item page link to it', () => {
+  // A face's old item page names the Roblox bundle it became.
+  const legacy = page({ details: { migrated_to_bundle_id: 105919952545574 } });
+  assert.equal(parseItemPage(legacy).details.bundleId, '105919952545574');
+  assert.equal(normalizePage(legacy).bundleId, '105919952545574');
+  assert.equal(parseItemPage(page()).details.bundleId, null);
+  assert.equal(parseItemPage(page({ details: { migrated_to_bundle_id: '1/../x' } })).details.bundleId, null);
+  // The bundle page: bundle_details_data, a 2026 bundle creation date, and a
+  // favorites count that restarts at the move (one bad reading is no restart).
+  const now = 1795453200, timestamp = [], favorited = [];
+  for (let i = 0; i <= 60; i++) {
+    timestamp.push(now - (60 - i) * DAY);
+    favorited.push(i < 40 ? 730000 + i : 1600 + 10 * (i - 40));
+  }
+  favorited[20] = 5;
+  const details = { bundle_id: 105919952545574, bundle_name: 'Playful Vampire', migrated_from_asset_id: 2409285794,
+    created: now - 300 * DAY, first_timestamp: now - 3000 * DAY, value: 50000, rap: 49326, best_price: 46000, num_sellers: 99, demand: 3, trend: 2 };
+  const history = { timestamp, favorited, rap: timestamp.map(() => 49326), best_price: timestamp.map((_, i) => 50000 - 50 * i), num_sellers: timestamp.map(() => 99) };
+  const bundle = `<script>var bundle_details_data = ${JSON.stringify(details)};\nvar history_data = ${JSON.stringify(history)};\nvar avg_daily_sales_volume_30_days = 4.2;\n</script>`;
+  const insight = parseItemPage(bundle);
+  assert.equal(insight.details.name, 'Playful Vampire');
+  assert.equal(insight.details.bestPrice, 46000);
+  assert.equal(insight.details.value, 50000);
+  assert.equal(insight.details.bundleId, '105919952545574');
+  assert.equal(insight.salesPerDay, 4.2);
+  const s = normalizePage(bundle);
+  assert.equal(s.value, 50000);
+  assert.equal(s.bundleId, '105919952545574');
+  assert.equal(s.created, now - 3000 * DAY);
+  assert.equal(s.daily.best.at(-1), 47000);
+  assert.equal(s.daily.fav[20], 5);
+  assert.equal(s.daily.fav[40], 730039);
+  assert.equal(s.daily.fav.at(-1), 730039 + 200);
+  // Item pages keep their own counts and dates.
+  assert.equal(normalizePage(page({ details: { created: 1000, first_timestamp: 500 } })).created, 1000);
+});
+
 test('demand uses a 0–5 scale and RAP-only items count as 0', () => {
   const items = parseItems({ success: true, items: {
     1: ['Amazing', '', 100, 200, 200, 4, 3, -1, 1, -1],
